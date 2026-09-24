@@ -81,9 +81,11 @@
       installBtn.addEventListener('click', function () {
         if (!deferredPrompt) return;
         deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(function () {
+        deferredPrompt.userChoice.then(function (choice) {
           deferredPrompt = null;
-          hideBanner();
+          if (choice.outcome === 'accepted') {
+            hideBanner();
+          }
         });
       });
 
