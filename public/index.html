@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f5ed">
+  <meta name="theme-color" content="#d8ef72">
   <meta name="description" content="ABC — Aku Butuh Code. Game tebak kata untuk jeda bareng teman kantor. Buat ruang, bagi tim, dan pecahkan kodenya.">
-  <title>ABC — Aku Butuh Code</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ABC - Quiz">
+  <title>ABC - Quiz</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="apple-touch-icon" href="/assets/icon-180.png">
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/styles.css?v=0.1.1">
   <script type="module" src="/app.js?v=0.2.0"></script>
@@ -17,5 +23,80 @@
   <div id="notice" class="notice" role="alert" hidden></div>
   <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
   <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+
+  <!-- Add to Home Screen prompt -->
+  <div id="a2hs-banner" class="a2hs-banner" hidden aria-live="polite">
+    <div class="a2hs-banner__inner">
+      <img class="a2hs-banner__icon" src="/assets/icon-192.png" alt="ABC Quiz icon" width="48" height="48">
+      <div class="a2hs-banner__text">
+        <strong class="a2hs-banner__title">ABC - Quiz</strong>
+        <span class="a2hs-banner__desc">Tambahkan ke layar utama untuk akses cepat!</span>
+      </div>
+      <div class="a2hs-banner__actions">
+        <button id="a2hs-install" class="a2hs-banner__btn a2hs-banner__btn--primary" type="button">Pasang</button>
+        <button id="a2hs-dismiss" class="a2hs-banner__btn" type="button" aria-label="Tutup">✕</button>
+      </div>
+    </div>
+    <!-- iOS-specific hint shown only on Safari/iOS -->
+    <p id="a2hs-ios-hint" class="a2hs-banner__ios-hint" hidden>
+      Ketuk <strong>Bagikan</strong> lalu pilih <strong>"Tambahkan ke Layar Utama"</strong>
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      var DISMISSED_KEY = 'a2hs_dismissed';
+      var banner = document.getElementById('a2hs-banner');
+      var installBtn = document.getElementById('a2hs-install');
+      var dismissBtn = document.getElementById('a2hs-dismiss');
+      var iosHint = document.getElementById('a2hs-ios-hint');
+      var deferredPrompt = null;
+
+      // Don't show if already dismissed or running as standalone
+      if (localStorage.getItem(DISMISSED_KEY) === '1') return;
+      if (window.matchMedia('(display-mode: standalone)').matches) return;
+      if (window.navigator.standalone === true) return;
+
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+      var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+      function showBanner() {
+        banner.hidden = false;
+      }
+
+      function hideBanner() {
+        banner.hidden = true;
+        localStorage.setItem(DISMISSED_KEY, '1');
+      }
+
+      // Android / Chrome: use beforeinstallprompt
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.hidden = false;
+        iosHint.hidden = true;
+        showBanner();
+      });
+
+      installBtn.addEventListener('click', function () {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function () {
+          deferredPrompt = null;
+          hideBanner();
+        });
+      });
+
+      // iOS Safari: show banner with manual instructions
+      if (isIOS && isSafari) {
+        installBtn.hidden = true;
+        iosHint.hidden = false;
+        // Small delay so the page loads first
+        setTimeout(showBanner, 2000);
+      }
+
+      dismissBtn.addEventListener('click', hideBanner);
+    })();
+  </script>
 </body>
 </html>
