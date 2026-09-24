@@ -166,7 +166,7 @@ document.addEventListener('click', async event => {
   const action = button.dataset.action;
   if (action === 'home') { event.preventDefault(); if (state.room) confirmAction('Kembali ke beranda?', 'Tujuanmu beranda? Kamu akan keluar dari ruang ini. Kamu bisa bergabung kembali lewat tautannya.', 'Keluar ruang', () => runCommand('leave')); else leaveLocal(); }
   if (action === 'help') help();
-  if (action === 'about') openDialog('ABC — Aku Butuh Code', `<p class="dialog-description">Ruang kecil untuk jeda yang berarti. Game tebak kata dua tim untuk teman-teman kantor.</p><p>Ilustrasi Open Peeps oleh Pablo Stanley (CC0). Ikon Lucide (ISC). Font DM Sans dan Space Grotesk (OFL). Dibuat sebagai game independen yang terinspirasi permainan asosiasi kata.</p><button class="button primary full" data-action="close-dialog">Kembali ke jeda</button>`);
+  if (action === 'about') openDialog('ABC — Aku Butuh Code', `<p class="dialog-description">Ruang kecil untuk jeda yang berarti. Game tebak kata dua tim untuk teman-teman kantor.</p><p>Ilustrasi Open Peeps oleh Pablo Stanley (CC0). Ikon Lucide (ISC). Font DM Sans dan Space Grotesk (OFL). Dibuat sebagai game independen yang terinspirasi permainan asosiasi kata.</p><p>Orchestra &amp; Developed by @farrid_jr (<a href="https://instagram.com/farrid_jr" target="_blank" rel="noreferrer">instagram.com/farrid_jr</a>)</p><button class="button primary full" data-action="close-dialog">Kembali ke jeda</button>`);
   if (action === 'profile') profileDialog();
   if (action === 'dismiss-notice') clearNotice();
   if (action === 'close-dialog') dialog.close();
