@@ -10,7 +10,7 @@ Browser ── https://abc-quiz.farrid.dev ──► Netlify (halaman, CSS, JS, 
 ```
 
 - **Netlify** hanya menyajikan `public/` (tanpa function). Domain `farrid.dev` tetap di Netlify DNS.
-- **Cloudflare Worker** (`worker/index.mjs`, `wrangler.toml`) menjalankan API dan WebSocket. Worker yang sama juga menyajikan `public/`, jadi `https://abc-quiz.<subdomain>.workers.dev` bisa langsung dipakai bermain.
+- **Cloudflare Worker** (`worker/index.mjs`, `wrangler.toml`) menjalankan API dan WebSocket. Worker yang sama juga menyajikan `public/`, jadi `https://abc-quiz.farridpastikaya.workers.dev` bisa langsung dipakai bermain.
 - `<meta name="abc-api">` di `public/index.html` menunjuk ke URL Worker. `ALLOWED_ORIGINS` di `wrangler.toml` berisi domain halaman yang boleh memanggil API.
 
 ### Deploy Worker (sekali, lalu setiap ada perubahan backend)
