@@ -1,0 +1,30 @@
+name = "abc-quiz"
+main = "worker/index.mjs"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The same Worker serves the static frontend (public/) and the API.
+[assets]
+directory = "public"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/health"]
+
+[vars]
+# Pages on other origins allowed to call the API (comma-separated).
+ALLOWED_ORIGINS = "https://abc-quiz.farrid.dev"
+ALLOW_LOCALHOST = "false"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "Session"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room", "Session"]
+
+[observability]
+enabled = true

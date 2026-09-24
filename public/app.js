@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const app = $('#app'), dialog = $('#dialog');
-const state = { profile: null, csrf: '', room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, polling: false, lastMe: 0, online: true, busy: false, sound: false, signature: '', lastGameId: null };
+const state = { profile: null, room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, token: '', online: true, busy: false, sound: false, signature: '', lastGameId: null };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<img class="icon ${cls}" src="/assets/icon-${name}.svg" alt="" aria-hidden="true" width="20" height="20">`;
 const avatar = (n, cls = '') => `<span class="avatar avatar-${n % 4} ${cls}"><img src="/assets/peep-${n}.svg" alt=""></span>`;
@@ -14,12 +14,26 @@ const teamSymbol = team => icon(team === 'coral' ? 'triangle' : 'circle');
 const announce = message => { $('#announcer').textContent = message; };
 function notice(message) { const n = $('#notice'); n.innerHTML = `<span>${esc(message)}</span><button data-action="dismiss-notice" aria-label="Tutup pemberitahuan">${icon('x')}</button>`; n.hidden = false; }
 function clearNotice() { $('#notice').hidden = true; }
+// The API runs on a Cloudflare Worker. When the page is served from another
+// domain (Netlify), <meta name="abc-api"> points at the Worker; locally and on
+// workers.dev the page and API share an origin.
+const API = (() => {
+  const configured = (document.querySelector('meta[name="abc-api"]')?.content || '').replace(/\/$/, '');
+  const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+  return configured && !local && !configured.includes('YOUR-SUBDOMAIN') ? configured : location.origin;
+})();
+// Session token lives in the browser (cross-site cookies are blocked by browsers).
+const TOKEN_KEY = 'abc-token';
+function token() { if (!state.token) try { state.token = localStorage.getItem(TOKEN_KEY) || ''; } catch {} return state.token; }
+function saveToken(value) { state.token = value; try { if (value) localStorage.setItem(TOKEN_KEY, value); else localStorage.removeItem(TOKEN_KEY); } catch {} }
 async function api(path, data, method = 'POST') {
   let response;
-  try { response = await fetch('/api' + path, { method: data === undefined ? 'GET' : method, credentials: 'same-origin', headers: data === undefined ? {} : { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) }); }
+  const headers = { ...(token() ? { Authorization: `Bearer ${token()}` } : {}), ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) };
+  try { response = await fetch(API + '/api' + path, { method: data === undefined ? 'GET' : method, headers, ...(data === undefined ? {} : { body: JSON.stringify(data) }) }); }
   catch { throw new Error('Koneksi terputus. Data belum dikirim. Coba lagi saat terhubung.'); }
   const result = await response.json();
-  if (!response.ok) { const error = new Error(result.error); error.status = response.status; error.code = result.code; throw error; }
+  if (result.token) saveToken(result.token);
+  if (!response.ok) { if (result.code === 'session_expired') saveToken(''); const error = new Error(result.error); error.status = response.status; error.code = result.code; throw error; }
   return result;
 }
 function header() {
@@ -82,65 +96,86 @@ function render() {
   updateInstallBanner();
   document.title = state.room ? `${state.room.title} · ABC — Aku Butuh Code` : 'ABC — Aku Butuh Code';
 }
-async function refresh() {
-  if (!state.code || !state.room) return;
-  try {
-    const code = state.code;
-    const r = await api(`/rooms/${code}`);
-    if (code !== state.code) return;
-    if (Date.now() - state.lastMe > 10000) {
-      const me = await api('/me');
-      state.csrf = me.csrf; state.lastMe = Date.now();
-      if (me.profile.version >= (state.profile?.version || 0)) state.profile = me.profile;
-    }
-    if (!state.online) { state.online = true; state.signature = ''; }
-    if (state.lastGameId !== r.game?.id) { state.selected = null; state.lastGameId = r.game?.id; }
-    if (state.selected !== null && (r.game?.cards[state.selected]?.revealed || r.game?.phase !== 'guess' || r.game?.team !== r.me.team)) state.selected = null;
-    const signature = JSON.stringify([r, state.profile]);
-    if (signature !== state.signature) {
-      const old = state.room;
-      state.signature = signature; state.room = r; render();
-      if (old?.game?.history.length !== r.game?.history.length) { announce('Papan permainan diperbarui.'); if (state.sound) playTone(); }
-    }
-  } catch (err) {
-    if ([401, 403, 404].includes(err.status)) { leaveLocal(); notice(err.message); }
-    else if (state.online) { state.online = false; render(); }
-  }
+// Live room connection: the server pushes a role-filtered snapshot after every
+// change; commands go up the same socket and are acknowledged by commandId.
+const socket = { ws: null, retry: 0, ping: null, timer: null, pending: new Map(), first: null };
+function applySnapshot(r) {
+  if (!state.online) { state.online = true; state.signature = ''; }
+  if (state.lastGameId !== r.game?.id) { state.selected = null; state.lastGameId = r.game?.id; }
+  if (state.selected !== null && (r.game?.cards[state.selected]?.revealed || r.game?.phase !== 'guess' || r.game?.team !== r.me.team)) state.selected = null;
+  const signature = JSON.stringify([r, state.profile]);
+  if (signature === state.signature) return;
+  const old = state.room;
+  state.signature = signature; state.room = r; render();
+  if (old && old.game?.history.length !== r.game?.history.length) { announce('Papan permainan diperbarui.'); if (state.sound) playTone(); }
 }
-let refreshing = false, refreshAgain = false;
-async function sync() {
-  if (refreshing) { refreshAgain = true; return; }
-  refreshing = true;
-  try { do { refreshAgain = false; await refresh(); } while (refreshAgain); } finally { refreshing = false; }
+function settlePending(error) {
+  for (const [id, p] of socket.pending) { clearTimeout(p.timer); p.reject(error); socket.pending.delete(id); }
 }
-// Polling keeps the board in sync and marks this player online. Fast while the
-// tab is visible, slow in the background so the player still counts as present.
-function connect() {
-  if (state.polling) return sync();
-  state.polling = true;
-  const tick = async () => {
-    if (!state.room) { state.polling = false; return; }
-    await sync();
-    setTimeout(tick, document.hidden ? 15000 : state.online ? 1500 : 4000);
+function closeSocket() {
+  const ws = socket.ws; socket.ws = null;
+  clearInterval(socket.ping); clearTimeout(socket.timer);
+  settlePending(new Error('Koneksi terputus. Coba lagi saat terhubung.'));
+  if (ws && ws.readyState <= 1) ws.close(1000);
+}
+function connect(code = state.code) {
+  if (socket.ws && socket.ws.readyState <= 1 && socket.code === code) return;
+  closeSocket();
+  const ws = new WebSocket(API.replace(/^http/, 'ws') + `/api/rooms/${code}/ws`, ['abc', token()]);
+  socket.ws = ws; socket.code = code;
+  ws.onopen = () => { socket.retry = 0; socket.ping = setInterval(() => ws.readyState === 1 && ws.send('ping'), 25000); };
+  ws.onmessage = event => {
+    if (event.data === 'pong') return;
+    let msg; try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.type === 'snapshot') {
+      if (socket.first) { socket.first.resolve(msg.room); socket.first = null; } else if (state.code === code) applySnapshot(msg.room);
+    } else if (msg.type === 'removed') {
+      const error = Object.assign(new Error(msg.error), { status: msg.status, code: msg.code });
+      if (socket.first) { socket.first.reject(error); socket.first = null; } else if (state.room) { leaveLocal(); notice(msg.error); }
+    } else if (msg.commandId && socket.pending.has(msg.commandId)) {
+      const p = socket.pending.get(msg.commandId); socket.pending.delete(msg.commandId); clearTimeout(p.timer);
+      if (msg.type === 'ack') p.resolve(); else p.reject(Object.assign(new Error(msg.error), { status: msg.status, code: msg.code }));
+    }
   };
-  tick();
+  ws.onclose = event => {
+    if (socket.ws !== ws) return;
+    socket.ws = null; clearInterval(socket.ping);
+    settlePending(new Error('Koneksi terputus. Aksi belum tentu tersimpan; papan akan diperbarui saat terhubung.'));
+    if (socket.first) { socket.first.reject(new Error('Belum bisa terhubung ke ruang. Coba lagi.')); socket.first = null; return; }
+    if (event.code === 4403 || !state.room || state.code !== code) return;
+    if (state.online) { state.online = false; render(); }
+    // Reconnect with backoff; the first snapshot after reconnecting restores the board.
+    socket.timer = setTimeout(() => { if (state.room && state.code === code) connect(code); }, Math.min(1000 * 2 ** socket.retry++, 15000));
+  };
+}
+function openRoom(code) {
+  return new Promise((resolve, reject) => { socket.first = { resolve, reject }; connect(code); });
 }
 async function enter(code) {
   await api(`/rooms/${code}/join`, {});
-  state.code = code;
-  state.room = await api(`/rooms/${code}`); state.signature = ''; state.lastGameId = state.room.game?.id;
-  history.pushState({}, '', `/r/${code}`); render(); connect(); $('#main')?.focus(); clearNotice();
+  const room = await openRoom(code);
+  state.code = code; state.signature = ''; state.selected = null; state.lastGameId = room.game?.id; state.online = true;
+  applySnapshot(room);
+  history.pushState({}, '', `/r/${code}`); render(); $('#main')?.focus(); clearNotice();
 }
 function leaveLocal() {
+  closeSocket();
   state.room = null; state.code = ''; state.signature = ''; state.selected = null; state.online = true;
   history.pushState({}, '', '/'); render(); $('#main')?.focus();
 }
+function send(message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { socket.pending.delete(message.commandId); reject(new Error('Server belum merespons. Coba lagi.')); }, 10000);
+    socket.pending.set(message.commandId, { resolve, reject, timer });
+    socket.ws.send(JSON.stringify(message));
+  });
+}
 async function runCommand(action, data = {}, commandId = newCommandId()) {
-  if (!state.online) return notice('Tunggu koneksi pulih sebelum melanjutkan.');
+  if (!state.online || socket.ws?.readyState !== WebSocket.OPEN) return notice('Tunggu koneksi pulih sebelum melanjutkan.');
   if (state.busy) return;
   state.busy = true;
-  try { await api(`/rooms/${state.code}/command`, { ...data, action, version: state.room.version, commandId }); clearNotice(); if (action === 'leave') leaveLocal(); else await sync(); }
-  catch (err) { notice(err.message); if (err.status === 409) await sync(); }
+  try { await send({ type: 'command', ...data, action, version: state.room.version, commandId }); clearNotice(); if (action === 'leave') leaveLocal(); }
+  catch (err) { notice(err.message); }
   finally { state.busy = false; }
 }
 let modalAction = null, modalTrigger = null, profileEditVersion = null;
@@ -223,19 +258,19 @@ document.addEventListener('submit', async event => {
       const result = await api('/me', { name: $('#edit-name').value, avatar: state.avatar, version: profileEditVersion }, 'PATCH');
       state.profile = result.profile; dialog.close(); render();
       if (!state.room && $('#player-name')) $('#player-name').value = state.profile.name;
-      await sync(); notice('Nama kamu sudah disimpan. Tetap kamu, di setiap ronde.');
+      notice('Nama kamu sudah disimpan. Tetap kamu, di setiap ronde.');
     } else if (form.id === 'clue-form') await runCommand('clue', { word: $('#clue-word').value, count: Number($('#clue-count').value) });
   } catch (err) {
     const errorTarget = form.id === 'entry-form' ? $('#entry-error') : $('#profile-error');
     if (errorTarget) errorTarget.textContent = err.message; else notice(err.message);
     const input = form.querySelector('input'); if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
-    if (err.code === 'profile_conflict') { const fresh = await api('/me'); state.profile = fresh.profile; state.csrf = fresh.csrf; profileEditVersion = fresh.profile.version; }
+    if (err.code === 'profile_conflict') { const fresh = await api('/me'); state.profile = fresh.profile; profileEditVersion = fresh.profile.version; }
   } finally { if (submit.isConnected) submit.disabled = false; }
 });
 window.addEventListener('online', () => { if (state.room) connect(); });
 window.addEventListener('offline', () => { state.online = false; if (state.room) render(); });
 window.addEventListener('popstate', () => location.reload());
-document.addEventListener('visibilitychange', () => { if (state.room && !document.hidden) sync(); });
+document.addEventListener('visibilitychange', () => { if (state.room && !document.hidden && !socket.ws) connect(); });
 // Add-to-home-screen. Android/Chromium offers a native prompt (beforeinstallprompt);
 // iOS has no API, so we show the Share → "Tambah ke Layar Utama" steps instead.
 const install = { deferred: null, ready: false };
@@ -293,7 +328,7 @@ window.addEventListener('appinstalled', () => { install.deferred = null; snoozeI
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 async function boot() {
   try {
-    const result = await api('/me'); state.profile = result.profile; state.csrf = result.csrf; state.avatar = result.profile.avatar;
+    const result = await api('/me'); state.profile = result.profile; state.avatar = result.profile.avatar;
     render();
     if (state.code && state.profile.name) { const code = state.code; try { await enter(code); } catch (err) { notice(err.message); } }
   } catch (err) { app.innerHTML = `<main class="boot"><h1>ABC — Aku Butuh Code</h1><p>${esc(err.message)}</p><a class="button primary" href="/">Coba lagi</a></main>`; }

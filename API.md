@@ -1,17 +1,25 @@
 # Kontrak API ABC v0.1
 
-Base `/api`, JSON. Semua respons API `Cache-Control: no-store`. Cookie `abc_session` HttpOnly; frontend mengambil token CSRF melalui `GET /me`. Semua mutasi harus menyertakan `X-CSRF-Token`, `Content-Type: application/json`, serta cookie sesi yang sama. Browser lintas origin tidak diizinkan. Tidak pernah mempercayai role/team dari client untuk otorisasi.
+Base `/api` di Worker Cloudflare, JSON. Semua respons `Cache-Control: no-store`. Autentikasi: `Authorization: Bearer <token>`. Token dibuat oleh `GET /me` pertama (field `token`) dan disimpan client. Tidak ada cookie maupun CSRF token. Origin lintas situs hanya diizinkan bila ada di `ALLOWED_ORIGINS` (CORS). Role/team dari client tidak pernah dipercaya untuk otorisasi.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/me` | — | `{profile:{id,name,avatar,version},csrf}`; sesi baru punya nama kosong |
+| GET | `/me` | — | `{profile:{id,name,avatar,version}, token?}`; `token` hanya ada saat sesi baru dibuat |
 | PATCH | `/me` | `{name,avatar?,version}` | `{profile}`; conflict 409 jika version sudah berubah |
 | POST | `/rooms` | `{title?}` | 201 `{code}`; nama pemain wajib tersimpan |
 | POST | `/rooms/:code/join` | `{}` | `{code}`; lock/kick/capacity diperiksa |
-| GET | `/rooms/:code` | — | snapshot sesuai peran; anggota aktif saja. Juga mencatat presence pemanggil |
-| POST | `/rooms/:code/command` | `{action,version,commandId,...data}` | `{ok:true}`; fetch snapshot setelahnya |
+| GET | `/rooms/:code/ws` | WebSocket, subprotocol `['abc', token]` | lihat bagian Realtime |
 
 `GET /health` (di luar base API) mengembalikan `{ok:true}` bila HTTP process dapat melayani request; bukan pemeriksaan mendalam database.
+
+## Realtime (WebSocket)
+
+Server → client:
+- `{type:'snapshot', room}`: dikirim saat terhubung dan setelah setiap perubahan (termasuk online/offline pemain).
+- `{type:'ack', commandId}` / `{type:'error', commandId, error, status, code}`: balasan command.
+- `{type:'removed', error, code}` lalu close `4403`: bukan anggota, dikeluarkan, atau keluar.
+
+Client → server: `{type:'command', action, version, commandId, ...data}`. Kirim teks `ping` untuk keepalive (dibalas `pong` tanpa membangunkan objek).
 
 ## Commands
 
@@ -26,7 +34,7 @@ Base `/api`, JSON. Semua respons API `Cache-Control: no-store`. Cookie `abc_sess
 - `kick`: host, `memberId`; tidak dapat mengeluarkan diri sendiri. Sesi target diblokir dari room.
 - `leave`: keluar; mempertahankan assignment untuk kembali dalam pertandingan yang sama.
 
-`commandId`: string unik 8–80 karakter alfanumerik/hyphen, biasanya UUID. Retry harus mengirim body identik termasuk `version`. Receipt disimpan per room (200 command terakhir). Penggunaan ID sama untuk payload/actor berbeda di room yang sama ditolak. Mutasi baru wajib memakai ID baru.
+`commandId`: string unik 8–80 karakter alfanumerik/hyphen, biasanya UUID. Retry harus mengirim body identik termasuk `version`. Receipt disimpan per room (200 command terakhir). Penggunaan ID sama untuk payload/actor berbeda ditolak. Mutasi baru wajib memakai ID baru.
 
 ## Snapshot
 
@@ -39,10 +47,10 @@ Card: `{word,revealed,type?}`. `type` tidak ada untuk kartu tersembunyi di respo
 ## Error
 
 `{error: "Pesan Indonesia untuk pengguna", code: "..."}`.
-400 input/aksi tidak valid; 401 sesi berakhir; 403 hak akses/CSRF/lock/kick; 404 room/endpoint tidak ditemukan; 409 stale state/profile conflict/full room; 413 body terlalu besar; 429 rate limit; 500 kegagalan server.
-Kode khusus: `stale_state`, `profile_conflict`, `session_expired`, `not_member`, `room_missing`, `csrf`, `rate_limit`; error domain lainnya memakai `invalid_action`.
+400 input/aksi tidak valid; 401 sesi berakhir; 403 hak akses/origin/lock/kick; 404 room/endpoint tidak ditemukan; 409 stale state/profile conflict/full room; 413 body terlalu besar; 429 rate limit; 500 kegagalan server.
+Kode khusus: `stale_state`, `profile_conflict`, `session_expired`, `not_member`, `room_missing`, `rate_limit`; error domain lainnya memakai `invalid_action`.
 Pada konflik, ambil snapshot/profil terbaru; jangan menerapkan hasil optimistis atau mengganti nama dengan fallback.
 
 ## Transport dan deployment
 
-Tidak ada koneksi streaming. Client melakukan polling `GET /rooms/:code` sekitar 1,5 detik saat tab terlihat dan 15 detik di latar belakang; poll juga menandai pemain online (jendela 35 detik). Di Netlify, `/api/*` dan `/health` dilayani oleh `netlify/functions/api.mjs`. Semua permintaan harus same-origin melalui HTTPS.
+Satu WebSocket per tab ke Durable Object room. Bila terputus, client menyambung ulang dengan backoff (1–15 detik) dan menerima snapshot penuh. `GET /health` → `{ok:true}`.
