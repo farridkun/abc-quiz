@@ -45,6 +45,11 @@
 
   <script>
     (function () {
+      // Register service worker for PWA installability
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+
       var DISMISSED_KEY = 'a2hs_dismissed';
       var banner = document.getElementById('a2hs-banner');
       var installBtn = document.getElementById('a2hs-install');
@@ -92,12 +97,11 @@
         });
       });
 
-      // iOS Safari: show banner with manual instructions
+      // iOS Safari: show banner immediately with manual instructions
       if (isIOS && isSafari) {
         installBtn.hidden = true;
         iosHint.hidden = false;
-        // Small delay so the page loads first
-        setTimeout(showBanner, 2000);
+        showBanner();
       }
 
       dismissBtn.addEventListener('click', hideBanner);
