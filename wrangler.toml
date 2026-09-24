@@ -2,6 +2,8 @@ name = "abc-quiz"
 main = "worker/index.mjs"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
+# Serve on abc-quiz.<account-subdomain>.workers.dev (the page on Netlify connects here).
+workers_dev = true
 
 # The same Worker serves the static frontend (public/) and the API.
 [assets]
