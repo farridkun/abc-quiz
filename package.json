@@ -1,13 +1,16 @@
 {
   "name": "abc-aku-butuh-code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": { "node": ">=22.0.0" },
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check server.mjs && node --check lib/game.mjs && node --check public/app.js"
+    "check": "node --check server.mjs && node --check lib/app.mjs && node --check lib/game.mjs && node --check public/app.js && node --check netlify/functions/api.mjs && node --check netlify/functions/cleanup.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.0"
   }
 }

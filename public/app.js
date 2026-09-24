@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const app = $('#app'), dialog = $('#dialog');
-const state = { profile: null, csrf: '', room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, stream: null, online: true, busy: false, sound: false, signature: '', lastGameId: null };
+const state = { profile: null, csrf: '', room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, polling: false, lastMe: 0, online: true, busy: false, sound: false, signature: '', lastGameId: null };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<img class="icon ${cls}" src="/assets/icon-${name}.svg" alt="" aria-hidden="true" width="20" height="20">`;
 const avatar = (n, cls = '') => `<span class="avatar avatar-${n % 4} ${cls}"><img src="/assets/peep-${n}.svg" alt=""></span>`;
@@ -87,10 +87,12 @@ async function refresh() {
     const code = state.code;
     const r = await api(`/rooms/${code}`);
     if (code !== state.code) return;
-    const me = await api('/me');
-    state.csrf = me.csrf;
-    if (state.stream?.readyState === EventSource.OPEN && !state.online) { state.online = true; state.signature = ""; }
-    if (me.profile.version >= (state.profile?.version || 0)) state.profile = me.profile;
+    if (Date.now() - state.lastMe > 10000) {
+      const me = await api('/me');
+      state.csrf = me.csrf; state.lastMe = Date.now();
+      if (me.profile.version >= (state.profile?.version || 0)) state.profile = me.profile;
+    }
+    if (!state.online) { state.online = true; state.signature = ''; }
     if (state.lastGameId !== r.game?.id) { state.selected = null; state.lastGameId = r.game?.id; }
     if (state.selected !== null && (r.game?.cards[state.selected]?.revealed || r.game?.phase !== 'guess' || r.game?.team !== r.me.team)) state.selected = null;
     const signature = JSON.stringify([r, state.profile]);
@@ -110,12 +112,17 @@ async function sync() {
   refreshing = true;
   try { do { refreshAgain = false; await refresh(); } while (refreshAgain); } finally { refreshing = false; }
 }
+// Polling keeps the board in sync and marks this player online. Fast while the
+// tab is visible, slow in the background so the player still counts as present.
 function connect() {
-  state.stream?.close();
-  state.stream = new EventSource(`/api/rooms/${state.code}/events`);
-  state.stream.onopen = () => { state.online = true; render(); sync(); };
-  state.stream.addEventListener('update', sync);
-  state.stream.onerror = () => { state.online = false; render(); };
+  if (state.polling) return sync();
+  state.polling = true;
+  const tick = async () => {
+    if (!state.room) { state.polling = false; return; }
+    await sync();
+    setTimeout(tick, document.hidden ? 15000 : state.online ? 1500 : 4000);
+  };
+  tick();
 }
 async function enter(code) {
   await api(`/rooms/${code}/join`, {});
@@ -124,7 +131,7 @@ async function enter(code) {
   history.pushState({}, '', `/r/${code}`); render(); connect(); $('#main')?.focus(); clearNotice();
 }
 function leaveLocal() {
-  state.stream?.close(); state.stream = null; state.room = null; state.code = ''; state.signature = ''; state.selected = null; state.online = true;
+  state.room = null; state.code = ''; state.signature = ''; state.selected = null; state.online = true;
   history.pushState({}, '', '/'); render(); $('#main')?.focus();
 }
 async function runCommand(action, data = {}, commandId = newCommandId()) {
@@ -223,7 +230,7 @@ document.addEventListener('submit', async event => {
 window.addEventListener('online', () => { if (state.room) connect(); });
 window.addEventListener('offline', () => { state.online = false; if (state.room) render(); });
 window.addEventListener('popstate', () => location.reload());
-setInterval(() => { if (state.room && !document.hidden) sync(); }, 10000);
+document.addEventListener('visibilitychange', () => { if (state.room && !document.hidden) sync(); });
 async function boot() {
   try {
     const result = await api('/me'); state.profile = result.profile; state.csrf = result.csrf; state.avatar = result.profile.avatar;

@@ -1,15 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../server.mjs';
 
 test('API multiplayer, secret isolation, concurrency, persistence and manual names', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'abc-test-'));
-  const dbPath = join(dir, 'test.sqlite');
-  let app = createApp({ dbPath }); let base;
+  let app = createApp(); let base;
   async function start() { await new Promise(r => app.server.listen(0, '127.0.0.1', r)); base = `http://127.0.0.1:${app.server.address().port}`; }
   await start();
   const clients = [];
@@ -62,13 +57,14 @@ test('API multiplayer, secret isolation, concurrency, persistence and manual nam
     assert.deepEqual(raced.map(r => r.status).sort(), [200, 409]);
     await Promise.all(raced.map(r => r.json()));
     assert.equal((await guesser.call(`/rooms/${code}`)).game.guesses, 2);
-    // Reconnect/restart retains the full game and exact user-selected display name.
-    await app.close(); app = createApp({ dbPath }); await start();
+    // A fresh stateless instance on the same stores (like a new function container)
+    // retains the full game and exact user-selected display name.
+    const stores = app.stores; await app.close(); app = createApp({ stores }); await start();
     await host.call('/me'); assert.equal(host.profile.name, 'Rani Putri'); assert.equal(host.profile.avatar, 4); assert.equal(host.profile.id, stableId);
     const restored = await guesser.call(`/rooms/${code}`); assert.equal(restored.game.guesses, 2); assert.equal(restored.game.cards.filter(c => c.revealed).length, 2);
     await command(host, 'abort'); await command(host, 'rematch'); await host.call('/me'); assert.equal(host.profile.name, 'Rani Putri');
     const next = await host.call('/rooms', { title: 'Room kedua' }, 'POST', 201);
     assert.equal((await host.call(`/rooms/${next.code}`)).members[0].name, 'Rani Putri');
     await command(host, 'kick', { memberId: players[4].profile.id }); await players[4].call(`/rooms/${code}/join`, {}, 'POST', 403);
-  } finally { await app.close(); rmSync(dir, { recursive: true, force: true }); }
+  } finally { await app.close(); }
 });

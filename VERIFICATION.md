@@ -1,5 +1,7 @@
 # Verification — ABC MVP
 
+> **Update v0.2 (Netlify):** backend dipindah ke Netlify Functions + Netlify Blobs, SSE diganti polling. `npm test` (13 tes) lulus. Temuan di bawah ini berasal dari versi SQLite/SSE; bagian SSE, restart DB, dan backup tidak lagi berlaku.
+
 Tanggal: 24 September 2026. Runtime Node.js 26.6.0, browser pengujian visual Codex in-app browser.
 
 ## Otomatis

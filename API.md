@@ -8,8 +8,7 @@ Base `/api`, JSON. Semua respons API `Cache-Control: no-store`. Cookie `abc_sess
 | PATCH | `/me` | `{name,avatar?,version}` | `{profile}`; conflict 409 jika version sudah berubah |
 | POST | `/rooms` | `{title?}` | 201 `{code}`; nama pemain wajib tersimpan |
 | POST | `/rooms/:code/join` | `{}` | `{code}`; lock/kick/capacity diperiksa |
-| GET | `/rooms/:code` | — | snapshot sesuai peran; anggota aktif saja |
-| GET | `/rooms/:code/events` | — | `text/event-stream`; event `update`, data `{}` |
+| GET | `/rooms/:code` | — | snapshot sesuai peran; anggota aktif saja. Juga mencatat presence pemanggil |
 | POST | `/rooms/:code/command` | `{action,version,commandId,...data}` | `{ok:true}`; fetch snapshot setelahnya |
 
 `GET /health` (di luar base API) mengembalikan `{ok:true}` bila HTTP process dapat melayani request; bukan pemeriksaan mendalam database.
@@ -27,7 +26,7 @@ Base `/api`, JSON. Semua respons API `Cache-Control: no-store`. Cookie `abc_sess
 - `kick`: host, `memberId`; tidak dapat mengeluarkan diri sendiri. Sesi target diblokir dari room.
 - `leave`: keluar; mempertahankan assignment untuk kembali dalam pertandingan yang sama.
 
-`commandId`: string unik 8–80 karakter alfanumerik/hyphen, biasanya UUID. Retry harus mengirim body identik termasuk `version`. Receipt berlaku hingga 24 jam. Penggunaan ID sama untuk payload/actor/scope berbeda ditolak. Mutasi baru wajib memakai ID baru.
+`commandId`: string unik 8–80 karakter alfanumerik/hyphen, biasanya UUID. Retry harus mengirim body identik termasuk `version`. Receipt disimpan per room (200 command terakhir). Penggunaan ID sama untuk payload/actor berbeda di room yang sama ditolak. Mutasi baru wajib memakai ID baru.
 
 ## Snapshot
 
@@ -46,4 +45,4 @@ Pada konflik, ambil snapshot/profil terbaru; jangan menerapkan hasil optimistis 
 
 ## Transport dan deployment
 
-SSE mengirim `retry: 2000` dan heartbeat 15 detik. Reconnect mengambil snapshot baru. Frontend melakukan polling 10 detik saat tab terlihat. Reverse proxy harus mematikan buffering pada `/events` dan menjaga koneksi streaming. Gunakan HTTPS serta `COOKIE_SECURE=true` untuk internet. Same-origin reverse proxy harus mempertahankan header Host.
+Tidak ada koneksi streaming. Client melakukan polling `GET /rooms/:code` sekitar 1,5 detik saat tab terlihat dan 15 detik di latar belakang; poll juga menandai pemain online (jendela 35 detik). Di Netlify, `/api/*` dan `/health` dilayani oleh `netlify/functions/api.mjs`. Semua permintaan harus same-origin melalui HTTPS.

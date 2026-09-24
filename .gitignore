@@ -1,4 +1,3 @@
-data/*
-!data/.gitkeep
 node_modules/
 *.log
+.netlify/
