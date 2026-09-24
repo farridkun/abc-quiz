@@ -26,7 +26,7 @@ function header() {
   return `<header class="site-header"><a href="/" class="brand" data-action="home" aria-label="ABC — Aku Butuh Code, beranda"><span class="brand-tiles"><b>A</b><b>B</b><b>C</b></span><span class="brand-name">Aku Butuh Code<span>a little break, a lot of connection.</span></span></a><nav aria-label="Navigasi utama"><button class="text-button" data-action="help">${icon('help-circle')}<span>Cara main</span></button>${state.profile?.name ? `<button class="profile-button" data-action="profile">${avatar(state.profile.avatar)}<span>${esc(state.profile.name)}</span>${icon('pencil')}</button>` : `<span class="header-tag">MADE FOR YOUR PEOPLE ${icon('sparkles')}</span>`}</nav></header>`;
 }
 function footer() {
-  return `<footer class="site-footer"><span>ABC <span class="footer-dot">/</span> Waktunya nyambung, bukan meeting.</span><button class="text-button" data-action="about">Dibuat untuk jeda yang berarti ${icon('arrow-right')}</button></footer>`;
+  return `<footer class="site-footer"><span>ABC <span class="footer-dot">/</span> Waktunya nyambung, bukan meeting.</span><span class="footer-actions">${canInstall() ? `<button class="text-button" data-action="install">${icon('smartphone')}Tambah ke Home Screen</button>` : ''}<button class="text-button" data-action="about">Dibuat untuk jeda yang berarti ${icon('arrow-right')}</button></span></footer>`;
 }
 function avatarPicker(selected, all = false) {
   return `<div class="avatar-picker" role="group" aria-label="Pilih avatar">${Array.from({ length: all ? 12 : 6 }, (_, i) => `<button type="button" data-action="avatar" data-avatar="${i + 1}" aria-label="Avatar ${i + 1}" aria-pressed="${selected === i + 1}" class="avatar-option ${selected === i + 1 ? 'chosen' : ''}">${avatar(i + 1)}${selected === i + 1 ? `<span class="avatar-check">${icon('check')}</span>` : ''}</button>`).join('')}</div>`;
@@ -166,6 +166,8 @@ document.addEventListener('click', async event => {
   const action = button.dataset.action;
   if (action === 'home') { event.preventDefault(); if (state.room) confirmAction('Kembali ke beranda?', 'Tujuanmu beranda? Kamu akan keluar dari ruang ini. Kamu bisa bergabung kembali lewat tautannya.', 'Keluar ruang', () => runCommand('leave')); else leaveLocal(); }
   if (action === 'help') help();
+  if (action === 'install') installDialog();
+  if (action === 'install-now') await installNow();
   if (action === 'about') openDialog('ABC — Aku Butuh Code', `<p class="dialog-description">Ruang kecil untuk jeda yang berarti. Game tebak kata dua tim untuk teman-teman kantor.</p><p>Ilustrasi Open Peeps oleh Pablo Stanley (CC0). Ikon Lucide (ISC). Font DM Sans dan Space Grotesk (OFL). Dibuat sebagai game independen yang terinspirasi permainan asosiasi kata.</p><p>Orchestra &amp; Developed by @farrid_jr (<a href="https://instagram.com/farrid_jr" target="_blank" rel="noreferrer">instagram.com/farrid_jr</a>)</p><button class="button primary full" data-action="close-dialog">Kembali ke jeda</button>`);
   if (action === 'profile') profileDialog();
   if (action === 'dismiss-notice') clearNotice();
@@ -231,6 +233,55 @@ window.addEventListener('online', () => { if (state.room) connect(); });
 window.addEventListener('offline', () => { state.online = false; if (state.room) render(); });
 window.addEventListener('popstate', () => location.reload());
 document.addEventListener('visibilitychange', () => { if (state.room && !document.hidden) sync(); });
+// Add-to-home-screen. Android/Chromium offers a native prompt (beforeinstallprompt);
+// iOS has no API, so we show the Share → "Tambah ke Layar Utama" steps instead.
+const install = { deferred: null, open: false, offered: false };
+const INSTALL_KEY = 'abc-install-dismissed', INSTALL_SNOOZE = 7 * 24 * 60 * 60 * 1000;
+const ua = navigator.userAgent;
+const isIOS = () => /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isMobile = () => isIOS() || /Android|Mobi/i.test(ua);
+const inAppBrowser = () => /FBAN|FBAV|Instagram|Line\/|MicroMessenger|WhatsApp|; wv\)/i.test(ua);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const canInstall = () => (isMobile() || install.deferred) && !isStandalone();
+function installSnoozed() {
+  try { return Date.now() - Number(localStorage.getItem(INSTALL_KEY) || 0) < INSTALL_SNOOZE; } catch { return false; }
+}
+function snoozeInstall(forever = false) {
+  try { localStorage.setItem(INSTALL_KEY, String(forever ? Date.now() + 100 * INSTALL_SNOOZE : Date.now())); } catch {}
+}
+function installDialog() {
+  const step = (text, sub) => `<li><b>${text}</b>${sub ? `<p>${sub}</p>` : ''}</li>`;
+  const chip = (name, label) => `<span class="ui-chip">${icon(name)}${label}</span>`;
+  let steps = '';
+  if (!install.deferred) {
+    const list = [];
+    if (inAppBrowser()) list.push(step(`Buka di ${isIOS() ? 'Safari' : 'Chrome'} dulu`, `Ketuk menu ${isIOS() ? '<span class="ui-chip">•••</span>' : chip('ellipsis-vertical', '')} di aplikasi ini, lalu pilih “Buka di browser”.`));
+    if (isIOS()) list.push(step(`Ketuk ${chip('share', 'Bagikan')}`, 'Ada di bilah bawah Safari (atau bilah atas di iPad).'), step(`Pilih ${chip('square-plus', 'Tambah ke Layar Utama')}`, 'Gulir daftar pilihan jika belum terlihat.'), step('Ketuk “Tambah”', 'Nama “ABC - Quiz” dan logonya muncul di layar utama.'));
+    else list.push(step(`Ketuk menu ${chip('ellipsis-vertical', '')}`, 'Di pojok kanan atas browser.'), step(`Pilih ${chip('square-plus', 'Tambahkan ke layar utama')}`, 'Di beberapa browser namanya “Instal aplikasi”.'), step('Ketuk “Tambahkan”', 'Logo ABC - Quiz muncul di layar utama.'));
+    steps = `<ol class="help-steps install-steps">${list.join('')}</ol>`;
+  }
+  openDialog('Tambahkan ABC - Quiz ke Home Screen Menu', `<div class="install-preview"><img src="/assets/icon-192.png" alt="" width="60" height="60"><div><strong>ABC - Quiz</strong><span>abc-quiz.farrid.dev</span></div></div><p class="dialog-description">Buka ABC langsung dari layar utama: layar penuh, tanpa bilah browser, satu ketukan menuju ruang bermain.</p>${steps}<div class="dialog-actions">${install.deferred ? `<button class="button" data-action="close-dialog">Nanti saja</button><button class="button primary" data-action="install-now">${icon('square-plus')}Tambahkan</button>` : `<button class="button primary full" data-action="close-dialog">Oke, mengerti ${icon('check')}</button>`}</div>`);
+  install.open = true;
+}
+async function installNow() {
+  const prompt = install.deferred; if (!prompt) return;
+  install.deferred = null; install.open = false; dialog.close();
+  prompt.prompt();
+  const { outcome } = await prompt.userChoice.catch(() => ({}));
+  snoozeInstall(outcome === 'accepted');
+  if (outcome === 'accepted') hideInstallButtons();
+}
+// Remove entry points without re-rendering, so nothing the user is typing is lost.
+const hideInstallButtons = () => document.querySelectorAll('[data-action="install"]').forEach(b => b.remove());
+function maybeOfferInstall() {
+  // Only offer on phones/tablets, once per visit, never mid-game or over another dialog.
+  if (install.offered || !isMobile() || !canInstall() || installSnoozed() || dialog.open || state.room?.game?.status === 'playing') return;
+  install.offered = true; snoozeInstall(); installDialog();
+}
+dialog.addEventListener('close', () => { if (install.open) { install.open = false; snoozeInstall(); } });
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); install.deferred = event; setTimeout(maybeOfferInstall, 1500); });
+window.addEventListener('appinstalled', () => { install.deferred = null; snoozeInstall(true); hideInstallButtons(); notice('ABC - Quiz sudah ada di Home Screen.'); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 async function boot() {
   try {
     const result = await api('/me'); state.profile = result.profile; state.csrf = result.csrf; state.avatar = result.profile.avatar;
@@ -238,4 +289,4 @@ async function boot() {
     if (state.code && state.profile.name) { const code = state.code; try { await enter(code); } catch (err) { notice(err.message); } }
   } catch (err) { app.innerHTML = `<main class="boot"><h1>ABC — Aku Butuh Code</h1><p>${esc(err.message)}</p><a class="button primary" href="/">Coba lagi</a></main>`; }
 }
-boot();
+boot().then(() => setTimeout(maybeOfferInstall, 3000));

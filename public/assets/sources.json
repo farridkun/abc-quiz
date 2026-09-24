@@ -43,5 +43,10 @@
   "icon-check-check.svg": "https://unpkg.com/lucide-static@0.468.0/icons/check-check.svg",
   "icon-settings-2.svg": "https://unpkg.com/lucide-static@0.468.0/icons/settings-2.svg",
   "lucide-LICENSE": "https://unpkg.com/lucide-static@0.468.0/LICENSE",
-  "icon-minus.svg": "https://unpkg.com/lucide-static@0.468.0/icons/minus.svg"
+  "icon-minus.svg": "https://unpkg.com/lucide-static@0.468.0/icons/minus.svg",
+  "icon-share.svg": "https://unpkg.com/lucide-static@0.468.0/icons/share.svg",
+  "icon-square-plus.svg": "https://unpkg.com/lucide-static@0.468.0/icons/square-plus.svg",
+  "icon-ellipsis-vertical.svg": "https://unpkg.com/lucide-static@0.468.0/icons/ellipsis-vertical.svg",
+  "icon-smartphone.svg": "https://unpkg.com/lucide-static@0.468.0/icons/smartphone.svg",
+  "favicon.svg / app-icon.svg / icon-*.png / og-image.png": "Generated from the ABC loading mark using DM Sans Bold outlines (OFL)"
 }
