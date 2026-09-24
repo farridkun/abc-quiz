@@ -13,6 +13,12 @@ Browser ── https://abc-quiz.farrid.dev ──► Netlify (halaman, CSS, JS, 
 - **Cloudflare Worker** (`worker/index.mjs`, `wrangler.toml`) menjalankan API dan WebSocket. Worker yang sama juga menyajikan `public/`, jadi `https://abc-quiz.farridpastikaya.workers.dev` bisa langsung dipakai bermain.
 - `<meta name="abc-api">` di `public/index.html` menunjuk ke URL Worker. `ALLOWED_ORIGINS` di `wrangler.toml` berisi domain halaman yang boleh memanggil API.
 
+### Feature flag: ruang publik
+
+Diatur lewat variabel Worker, tanpa ubah kode: Cloudflare dashboard → Workers & Pages → **abc-quiz** → **Settings → Variables and Secrets** → tambah `FEATURE_PUBLIC_ROOMS` = `true` (jenis Text) → **Deploy**. Untuk mematikan, ubah nilainya (misalnya `false`) atau hapus variabelnya. Default: mati.
+
+Saat mati, daftar dan pilihan "publik" hilang dari UI, API daftar mengembalikan 404, dan ruang berhenti dipublikasikan. Ruang tetap bisa dimasuki lewat kode/link. `keep_vars = true` di `wrangler.toml` menjaga nilai dari dashboard agar tidak tertimpa saat deploy berikutnya.
+
 ### Deploy Worker (sekali, lalu setiap ada perubahan backend)
 
 1. Buat akun Cloudflare gratis. Subdomain `workers.dev` terlihat di **Workers & Pages → Account details**.
@@ -46,6 +52,10 @@ Buka http://127.0.0.1:8787. `wrangler dev` menjalankan Worker, Durable Objects (
 - Nama Unicode 1–24 karakter tampak, kapitalisasi dipertahankan, validasi tanpa nama fallback. Duplikat dibedakan badge ID terpisah. Avatar dari 12 Open Peeps.
 - Nama dan avatar tersimpan di profil guest server selama sesi browser berlaku (30 hari), termasuk refresh, reconnect, rematch, dan room baru pada host yang sama. Sesi/perangkat baru meminta nama lagi.
 - Dua tim, role pemberi petunjuk/penebak, penonton, role terkunci saat pertandingan.
+- **Acak tim & peran** (host): pemain online dibagi rata ke dua tim, masing-masing 1 pemberi petunjuk; pemain offline jadi penonton.
+- **Hak kelola ruang** (mulai, kunci, kick, acak, publik/privat, ronde baru, hentikan) hanya untuk host dan pembuat ruang, dicek di server. Pembuat ruang tidak bisa di-kick dan otomatis jadi host lagi saat kembali.
+- **Daftar ruang publik** (feature flag, lihat bawah): ruang bisa ditandai publik saat dibuat atau dari lobby, lalu muncul di beranda selama ada pemain online, tidak dikunci, dan belum penuh.
+- **Selebrasi akhir game**: confetti dan photocard 1080×1920 (ukuran IG Story) yang dibuat di browser. Pola kata dan nomor serinya unik per game dan per pemain. Tombol bagikan membuka menu share HP (pilih Instagram → Cerita); tombol simpan mengunduh PNG.
 - Papan 5×5 dari **496 kata Indonesia unik**, distribusi 9/8/7/1, satu kata + angka 1–9, maksimal angka+1 tebakan, seluruh kondisi menang/kalah, akhir giliran, rematch.
 - Pilih kartu lalu konfirmasi; server menentukan hasil. Skor/riwayat/peran disinkronkan.
 - Peta rahasia hanya dikirim ke pemberi petunjuk yang sah; kartu terbuka menjadi informasi publik. Semua kartu terlihat setelah pertandingan selesai.
@@ -61,6 +71,7 @@ Cloudflare Worker + dua Durable Object (SQLite, paket gratis). Aturan permainan 
 - **Session** (satu per token browser): ID stabil, nama, avatar, version, dan daftar room. Token acak 32 byte disimpan di `localStorage` dan dikirim sebagai `Authorization: Bearer`; server hanya menyimpan hash SHA-256-nya sebagai nama objek. Masa berlaku 30 hari sejak terakhir dipakai.
 - **Room** (satu per kode room): state permainan di memori, disimpan ke SQLite objek tersebut setiap perubahan. Satu thread per room, jadi tidak ada race: dua tebakan bersamaan diproses berurutan dan expected version menolak yang kedua. Receipt `commandId` (200 terakhir) membuat retry identik tidak membuka kartu dua kali.
 - **Realtime**: `GET /api/rooms/:kode/ws` (WebSocket Hibernation API). Setiap pemain menerima snapshot yang sudah difilter sesuai perannya; peta rahasia hanya dikirim ke pemberi petunjuk. Online = punya koneksi terbuka. Alarm objek menangani pengalihan host dan kedaluwarsa room (24 jam tanpa aktivitas).
+- **Lobby** (satu objek): direktori ruang publik. Room mengirim ringkasan (judul, host, jumlah pemain, status) setiap berubah; tanpa ID pemain.
 - **Ganti nama**: Session menyimpan daftar room, lalu Worker mengirim nama baru ke setiap Room yang terkait tanpa mengubah version permainan.
 
 Keamanan: tidak ada cookie, jadi CSRF tidak relevan. API menolak origin di luar `ALLOWED_ORIGINS`, ada rate limit (per instance Worker dan per koneksi), CSP ketat (`public/_headers`, dipakai Netlify maupun Cloudflare), dan semua teks di-escape.

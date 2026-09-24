@@ -13,7 +13,7 @@ const persist = mkdtempSync(join(tmpdir(), 'abc-worker-'));
 
 function startWorker() {
   const child = spawn('npx', ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(PORT), '--persist-to', persist,
-    '--var', 'HANDOFF_MS:1500', '--var', 'ALLOW_LOCALHOST:true', '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, detached: true });
+    '--var', 'HANDOFF_MS:1500', '--var', 'ALLOW_LOCALHOST:true', '--var', 'FEATURE_PUBLIC_ROOMS:true', '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, detached: true });
   let log = '';
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('wrangler dev did not start:\n' + log)); }, 90000);
@@ -96,7 +96,36 @@ test('Cloudflare Worker: realtime multiplayer, secrets, idempotency, persistence
     const players = [host];
     for (const name of ['Bima', 'Naya', 'Dito', 'Rani']) { const c = await make(name); await c.call(`/rooms/${code}/join`, {}); players.push(c); }
     for (const c of players) await c.connect(code);
+
     await host.next(s => s.members.length === 5 && s.members.every(m => m.online));
+    // Feature flag + public directory: private rooms stay hidden; public rooms are listed while someone is online.
+    assert.deepEqual(await (await fetch(base + '/api/config')).json(), { publicRooms: true });
+    const listed = async () => (await (await fetch(base + '/api/rooms/public')).json()).rooms;
+    assert.ok(!(await listed()).some(r => r.code === code));
+    const opener = await make('Publik'); const pub = await opener.call('/rooms', { title: 'Ruang terbuka', public: true }, 'POST', 201);
+    await opener.connect(pub.code);
+    const entry = (await listed()).find(r => r.code === pub.code);
+    assert.equal(entry.title, 'Ruang terbuka'); assert.equal(entry.hostName, 'Publik'); assert.equal(entry.players, 1); assert.equal(entry.status, 'lobby');
+    assert.ok(!('members' in entry) && !JSON.stringify(entry).includes(opener.profile.id));
+    assert.equal((await opener.command('visibility')).type, 'ack');
+    await opener.next(s => s.public === false);
+    assert.ok(!(await listed()).some(r => r.code === pub.code));
+    opener.close();
+
+    // Only the host/creator manages the room.
+    await players[1].next(s => s.version === host.room.version);
+    const denied = await players[1].command('start');
+    assert.equal(denied.type, 'error'); assert.equal(denied.status, 403);
+    assert.equal((await players[1].command('shuffle')).status, 403);
+    assert.equal((await players[1].command('kick', { memberId: stableId })).status, 403);
+    // Host shuffles: every online player lands on a team, one clue giver per team.
+    assert.equal((await host.command('shuffle')).type, 'ack');
+    const shuffled = await host.next(s => s.members.every(m => m.team));
+    for (const team of ['coral', 'ocean']) assert.equal(shuffled.members.filter(m => m.team === team && m.role === 'spymaster').length, 1);
+    assert.ok(shuffled.ready);
+    await players[1].next(s => s.version === shuffled.version);
+    // Back to spectators so the seating below starts from a clean lobby.
+    for (const c of players) { await c.next(s => s.version === host.room.version); assert.equal((await c.command('seat', { team: null, role: 'guesser' })).type, 'ack'); await host.next(s => !s.members.find(m => m.id === c.profile.id).team); }
 
     const outsider = await make('Luar');
     await assert.rejects(outsider.connect(code)); assert.equal(outsider.removed?.code, 'not_member');
@@ -166,6 +195,10 @@ test('Cloudflare Worker: realtime multiplayer, secrets, idempotency, persistence
     const handed = await guesser.next(s => s.hostId !== stableId, 10000);
     assert.equal(handed.hostId, guesser.profile.id);
     assert.equal(handed.members.find(m => m.id === stableId).online, false);
+    // The creator comes back and takes the host role back.
+    await host.connect(code);
+    const reclaimed = await guesser.next(s => s.hostId === stableId);
+    assert.equal(reclaimed.ownerId, stableId);
   } catch (err) {
     console.error('FAILED:', err); throw err;
   } finally {
