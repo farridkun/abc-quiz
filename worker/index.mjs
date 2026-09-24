@@ -13,6 +13,9 @@ const ROOM_AGE = 24 * 60 * 60 * 1000;
 const RECEIPTS = 200;
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const WS_PROTOCOL = 'abc';
+const PUBLIC_LIST_LIMIT = 30;
+// Feature flag, set as a Worker variable in the Cloudflare dashboard.
+const publicRoomsEnabled = env => env.FEATURE_PUBLIC_ROOMS === 'true';
 
 const hex = bytes => [...bytes].map(n => n.toString(16).padStart(2, '0')).join('');
 const randomHex = n => hex(crypto.getRandomValues(new Uint8Array(n)));
@@ -57,6 +60,23 @@ export class Session extends DurableObject {
   async alarm() { const p = await this.ctx.storage.get('profile'); if (!p || p.expires <= Date.now()) await this.ctx.storage.deleteAll(); }
 }
 
+// Directory of public rooms (single instance). Rooms push a small summary
+// whenever they change; the landing page reads the list.
+export class Lobby extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => { this.rooms = (await ctx.storage.get('rooms')) || {}; });
+  }
+  async upsert(entry) { this.rooms[entry.code] = entry; await this.ctx.storage.put('rooms', this.rooms); }
+  async remove(code) { if (!this.rooms[code]) return; delete this.rooms[code]; await this.ctx.storage.put('rooms', this.rooms); }
+  async list() {
+    const cutoff = Date.now() - ROOM_AGE;
+    return Object.values(this.rooms).filter(r => r.updatedAt > cutoff && r.online > 0)
+      .sort((a, b) => (a.status === 'lobby' ? 0 : 1) - (b.status === 'lobby' ? 0 : 1) || b.updatedAt - a.updatedAt)
+      .slice(0, PUBLIC_LIST_LIMIT);
+  }
+}
+
 export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -72,11 +92,30 @@ export class Room extends DurableObject {
   }
   sockets(id, except) { return this.ctx.getWebSockets(id).filter(ws => ws !== except && ws.readyState === WebSocket.OPEN); }
   online(id, except) { return this.sockets(id, except).length > 0; }
-  async save() {
+  async save(closing) {
     await this.ctx.storage.put('room', this.room);
     const r = this.room;
     await this.ctx.storage.setAlarm(Math.min(r.handoffAt ?? Infinity, r.updatedAt + ROOM_AGE));
+    // The public list is best-effort: it must never block or fail a game move.
+    try { await this.publish(closing); } catch (err) { console.error('Public list update failed:', err); }
   }
+  // Keep the public directory in sync: listed while public, open, not full and someone is online.
+  async publish(closing) {
+    const r = this.room, lobby = this.env.LOBBY.get(this.env.LOBBY.idFromName('public'));
+    const active = r ? r.members.filter(m => m.active) : [];
+    const online = active.filter(m => this.online(m.id, closing)).length;
+    const listed = r && publicRoomsEnabled(this.env) && r.public && !r.locked && active.length < 12 && online > 0;
+    if (listed) {
+      const host = r.members.find(m => m.id === r.hostId);
+      await lobby.upsert({ code: r.code, title: r.title, hostName: host?.name || '', hostAvatar: host?.avatar || 1, players: active.length, online,
+        status: r.game?.status === 'playing' ? 'playing' : 'lobby', updatedAt: Date.now() });
+      r.listed = true;
+    } else if (r?.listed || (!r && this.code)) {
+      await lobby.remove(r?.code || this.code);
+      if (r) r.listed = false;
+    }
+  }
+  context() { return { isOnline: id => this.online(id), publicRooms: publicRoomsEnabled(this.env) }; }
   syncMember(profile) {
     const m = this.room.members.find(x => x.id === profile.id);
     if (!m || (m.name === profile.name && m.avatar === profile.avatar)) return false;
@@ -100,9 +139,10 @@ export class Room extends DurableObject {
     }
   }
 
-  async init(code, profile, title) {
+  async init(code, profile, title, isPublic = false) {
     if (this.room && this.room.updatedAt > Date.now() - ROOM_AGE) return { exists: true };
     const room = newRoom(code, profile.id, title);
+    room.public = isPublic && publicRoomsEnabled(this.env);
     Object.assign(room.members[0], { name: profile.name, avatar: profile.avatar });
     room.receipts = []; room.handoffAt = null;
     this.room = room; await this.save(); return { code };
@@ -128,6 +168,8 @@ export class Room extends DurableObject {
     try {
       const room = this.live(); membership(room, member.id);
       this.syncMember(member);
+      // The creator reclaims the host role whenever they reconnect.
+      if (room.ownerId && member.id === room.ownerId && room.hostId !== member.id) { room.hostId = member.id; room.version++; }
       if (room.hostId === member.id) room.handoffAt = null;
       room.updatedAt = Date.now();
       await this.save();
@@ -161,7 +203,7 @@ export class Room extends DurableObject {
       }
       requireThat(room.version === data.version, 'Ruang sudah berubah. Papan diperbarui; coba aksimu kembali.', 409, 'stale_state');
       const hostBefore = room.hostId;
-      applyCommand(room, id, data.action, data);
+      applyCommand(room, id, data.action, data, this.context());
       room.receipts = [{ id: data.commandId, actor: id, payload, at: now }, ...room.receipts].slice(0, RECEIPTS);
       if (room.hostId !== hostBefore) room.handoffAt = null;
       await this.save();
@@ -178,7 +220,8 @@ export class Room extends DurableObject {
     if (!this.room) return;
     const { id } = ws.deserializeAttachment() || {};
     // Host left: give them a grace period, then an alarm hands the room over.
-    if (id && id === this.room.hostId && !this.online(id, ws)) { this.room.handoffAt = Date.now() + this.handoffMs; await this.save(); }
+    if (id && id === this.room.hostId && !this.online(id, ws)) this.room.handoffAt = Date.now() + this.handoffMs;
+    await this.save(ws);
     this.broadcast({ closing: ws });
   }
   async webSocketError(ws) { await this.webSocketClose(ws); }
@@ -198,7 +241,7 @@ export class Room extends DurableObject {
     if (room.updatedAt + ROOM_AGE <= now) {
       // Connected players keep the room alive; otherwise it expires.
       if (this.ctx.getWebSockets().length) { room.updatedAt = now; await this.save(); }
-      else { this.room = null; await this.ctx.storage.deleteAll(); }
+      else { this.code = room.code; this.room = null; await this.publish(); await this.ctx.storage.deleteAll(); }
       return;
     }
     await this.save();
@@ -251,6 +294,12 @@ async function route(request, env, ip) {
   const url = new URL(request.url), path = url.pathname, method = request.method;
   if (path === '/health') return Response.json({ ok: true });
   limited(`ip:${ip}`, 2000);
+  if (method === 'GET' && path === '/api/config') return Response.json({ publicRooms: publicRoomsEnabled(env) });
+  if (method === 'GET' && path === '/api/rooms/public') {
+    requireThat(publicRoomsEnabled(env), 'Daftar ruang publik sedang nonaktif.', 404, 'feature_disabled');
+    limited(`list:${ip}`, 240);
+    return Response.json({ rooms: await env.LOBBY.get(env.LOBBY.idFromName('public')).list() });
+  }
 
   const ws = path.match(/^\/api\/rooms\/([A-Z2-9]{6})\/ws$/);
   if (ws && method === 'GET') {
@@ -288,7 +337,7 @@ async function route(request, env, ip) {
     const title = data.title ? validName(data.title) : 'Ruang rehat';
     for (let i = 0; i < 10; i++) {
       const code = [...crypto.getRandomValues(new Uint8Array(6))].map(n => ROOM_ALPHABET[n % ROOM_ALPHABET.length]).join('');
-      const result = await roomStub(env, code).init(code, publicProfile(p), title);
+      const result = await roomStub(env, code).init(code, publicProfile(p), title, data.public === true);
       if (result.exists) continue;
       await sessionStub(env, key).rememberRoom(code);
       return Response.json({ code }, { status: 201 });

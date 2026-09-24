@@ -100,3 +100,44 @@ test('rejoining a lobby cannot create two spymasters on one team', () => {
   assert.equal(room.members.filter(m => m.active && m.team === 'ocean' && m.role === 'spymaster').length, 1);
   assert.equal(room.members.find(m => m.id === 'b').role, 'guesser');
 });
+
+test('only the host or the room creator can manage the room; the creator cannot be kicked', () => {
+  const room = newRoom('ABC234', 'owner', 'Test');
+  for (const id of ['a', 'b', 'c']) joinRoom(room, id);
+  for (const action of ['start', 'lock', 'shuffle', 'rematch', 'abort', 'visibility']) {
+    assert.throws(() => applyCommand(room, 'a', action, {}, { publicRooms: true }), err => err.status === 403, action);
+  }
+  assert.throws(() => applyCommand(room, 'a', 'kick', { memberId: 'b' }), err => err.status === 403);
+  // Host handoff: the new host can manage, the creator keeps rights too, and nobody kicks the creator.
+  room.hostId = 'a';
+  applyCommand(room, 'a', 'lock'); assert.equal(room.locked, true);
+  applyCommand(room, 'owner', 'lock'); assert.equal(room.locked, false);
+  assert.throws(() => applyCommand(room, 'a', 'kick', { memberId: 'owner' }), /Pembuat ruang/);
+  assert.throws(() => applyCommand(room, 'b', 'start'), err => err.status === 403);
+  // The creator leaving and coming back reclaims the host role.
+  room.hostId = 'owner';
+  applyCommand(room, 'owner', 'leave'); assert.equal(room.hostId, 'a');
+  joinRoom(room, 'owner'); assert.equal(room.hostId, 'owner');
+  assert.equal(snapshot(room, 'b', () => ({ name: 'x' })).ownerId, 'owner');
+});
+
+test('shuffle balances online players into two ready teams and benches offline players', () => {
+  const room = newRoom('ABC234', 'owner', 'Test');
+  for (const id of ['a', 'b', 'c', 'd', 'e', 'off']) joinRoom(room, id);
+  const isOnline = id => id !== 'off';
+  assert.throws(() => applyCommand(room, 'owner', 'shuffle', {}, { isOnline: id => ['owner', 'a', 'b'].includes(id) }), /minimal 4/);
+  applyCommand(room, 'owner', 'shuffle', {}, { isOnline });
+  const byTeam = team => room.members.filter(m => m.team === team);
+  assert.equal(byTeam('coral').length, 3); assert.equal(byTeam('ocean').length, 3);
+  for (const team of ['coral', 'ocean']) assert.equal(byTeam(team).filter(m => m.role === 'spymaster').length, 1);
+  const off = room.members.find(m => m.id === 'off'); assert.equal(off.team, null); assert.equal(off.role, 'guesser');
+  applyCommand(room, 'owner', 'start');
+  assert.throws(() => applyCommand(room, 'owner', 'shuffle', {}, { isOnline }), /terkunci/);
+});
+
+test('public visibility needs the feature flag', () => {
+  const room = newRoom('ABC234', 'owner', 'Test');
+  assert.throws(() => applyCommand(room, 'owner', 'visibility', {}, { publicRooms: false }), err => err.code === 'feature_disabled');
+  applyCommand(room, 'owner', 'visibility', {}, { publicRooms: true }); assert.equal(room.public, true);
+  assert.equal(snapshot(room, 'owner', () => ({ name: 'x' })).public, true);
+});

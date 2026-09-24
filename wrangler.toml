@@ -5,12 +5,17 @@ compatibility_flags = ["nodejs_compat"]
 # Serve on abc-quiz.<account-subdomain>.workers.dev (the page on Netlify connects here).
 workers_dev = true
 
+# Keep variables set in the Cloudflare dashboard (like FEATURE_PUBLIC_ROOMS) on deploy.
+keep_vars = true
+
 # The same Worker serves the static frontend (public/) and the API.
 [assets]
 directory = "public"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/health"]
 
+# Feature flags are NOT defined here so the dashboard stays the source of truth:
+#   FEATURE_PUBLIC_ROOMS = "true"  → shows the public room list. Unset or anything else = off.
 [vars]
 # Pages on other origins allowed to call the API (comma-separated).
 ALLOWED_ORIGINS = "https://abc-quiz.farrid.dev,https://*--abc-quiz-3346.netlify.app"
@@ -24,9 +29,17 @@ class_name = "Room"
 name = "SESSIONS"
 class_name = "Session"
 
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room", "Session"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Lobby"]
 
 [observability]
 enabled = true

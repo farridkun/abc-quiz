@@ -48,5 +48,8 @@
   "icon-square-plus.svg": "https://unpkg.com/lucide-static@0.468.0/icons/square-plus.svg",
   "icon-ellipsis-vertical.svg": "https://unpkg.com/lucide-static@0.468.0/icons/ellipsis-vertical.svg",
   "icon-smartphone.svg": "https://unpkg.com/lucide-static@0.468.0/icons/smartphone.svg",
-  "favicon.svg / app-icon.svg / icon-*.png / og-image.png": "Generated from the ABC loading mark using DM Sans Bold outlines (OFL)"
+  "favicon.svg / app-icon.svg / icon-*.png / og-image.png": "Generated from the ABC loading mark using DM Sans Bold outlines (OFL)",
+  "icon-shuffle.svg": "https://unpkg.com/lucide-static@0.468.0/icons/shuffle.svg",
+  "icon-download.svg": "https://unpkg.com/lucide-static@0.468.0/icons/download.svg",
+  "icon-globe.svg": "https://unpkg.com/lucide-static@0.468.0/icons/globe.svg"
 }
