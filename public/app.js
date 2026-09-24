@@ -79,6 +79,7 @@ function render() {
     if (target?.disabled && focus.action === 'card') target = app.querySelector('.word-card:not(:disabled)') || document.getElementById('main');
     if (target && !target.disabled) { target.focus({ preventScroll: true }); if (focus.start != null && target.setSelectionRange) try { target.setSelectionRange(focus.start, focus.end); } catch {} }
   }
+  updateInstallBanner();
   document.title = state.room ? `${state.room.title} · ABC — Aku Butuh Code` : 'ABC — Aku Butuh Code';
 }
 async function refresh() {
@@ -168,6 +169,8 @@ document.addEventListener('click', async event => {
   if (action === 'help') help();
   if (action === 'install') installDialog();
   if (action === 'install-now') await installNow();
+  if (action === 'install-cta') { if (install.deferred) await installNow(); else installDialog(); }
+  if (action === 'install-dismiss') { snoozeInstall(); updateInstallBanner(); }
   if (action === 'about') openDialog('ABC — Aku Butuh Code', `<p class="dialog-description">Ruang kecil untuk jeda yang berarti. Game tebak kata dua tim untuk teman-teman kantor.</p><p>Ilustrasi Open Peeps oleh Pablo Stanley (CC0). Ikon Lucide (ISC). Font DM Sans dan Space Grotesk (OFL). Dibuat sebagai game independen yang terinspirasi permainan asosiasi kata.</p><p>Orchestra &amp; Developed by @farrid_jr (<a href="https://instagram.com/farrid_jr" target="_blank" rel="noreferrer">instagram.com/farrid_jr</a>)</p><button class="button primary full" data-action="close-dialog">Kembali ke jeda</button>`);
   if (action === 'profile') profileDialog();
   if (action === 'dismiss-notice') clearNotice();
@@ -235,7 +238,7 @@ window.addEventListener('popstate', () => location.reload());
 document.addEventListener('visibilitychange', () => { if (state.room && !document.hidden) sync(); });
 // Add-to-home-screen. Android/Chromium offers a native prompt (beforeinstallprompt);
 // iOS has no API, so we show the Share → "Tambah ke Layar Utama" steps instead.
-const install = { deferred: null, open: false, offered: false };
+const install = { deferred: null, ready: false };
 const INSTALL_KEY = 'abc-install-dismissed', INSTALL_SNOOZE = 7 * 24 * 60 * 60 * 1000;
 const ua = navigator.userAgent;
 const isIOS = () => /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -261,26 +264,32 @@ function installDialog() {
     steps = `<ol class="help-steps install-steps">${list.join('')}</ol>`;
   }
   openDialog('Tambahkan ABC - Quiz ke Home Screen Menu', `<div class="install-preview"><img src="/assets/icon-192.png" alt="" width="60" height="60"><div><strong>ABC - Quiz</strong><span>abc-quiz.farrid.dev</span></div></div><p class="dialog-description">Buka ABC langsung dari layar utama: layar penuh, tanpa bilah browser, satu ketukan menuju ruang bermain.</p>${steps}<div class="dialog-actions">${install.deferred ? `<button class="button" data-action="close-dialog">Nanti saja</button><button class="button primary" data-action="install-now">${icon('square-plus')}Tambahkan</button>` : `<button class="button primary full" data-action="close-dialog">Oke, mengerti ${icon('check')}</button>`}</div>`);
-  install.open = true;
 }
 async function installNow() {
   const prompt = install.deferred; if (!prompt) return;
-  install.deferred = null; install.open = false; dialog.close();
+  install.deferred = null; if (dialog.open) dialog.close();
   prompt.prompt();
   const { outcome } = await prompt.userChoice.catch(() => ({}));
   snoozeInstall(outcome === 'accepted');
   if (outcome === 'accepted') hideInstallButtons();
+  updateInstallBanner();
 }
 // Remove entry points without re-rendering, so nothing the user is typing is lost.
 const hideInstallButtons = () => document.querySelectorAll('[data-action="install"]').forEach(b => b.remove());
-function maybeOfferInstall() {
-  // Only offer on phones/tablets, once per visit, never mid-game or over another dialog.
-  if (install.offered || !isMobile() || !canInstall() || installSnoozed() || dialog.open || state.room?.game?.status === 'playing') return;
-  install.offered = true; snoozeInstall(); installDialog();
+// Instagram-style bar at the top: always one tap away on mobile, closable for 7 days.
+// Hidden during an active game so the board keeps the full screen.
+const banner = $('#install-banner');
+function updateInstallBanner() {
+  const show = install.ready && isMobile() && canInstall() && !installSnoozed() && state.room?.game?.status !== 'playing';
+  banner.hidden = !show;
+  if (!show) return;
+  const cta = inAppBrowser() ? 'Buka' : install.deferred ? 'Pasang' : 'Tambah';
+  if (banner.dataset.cta === cta) return;
+  banner.dataset.cta = cta;
+  banner.innerHTML = `<button class="install-close" data-action="install-dismiss" aria-label="Tutup">${icon('x')}</button><img src="/assets/icon-192.png" alt="" width="40" height="40"><div class="install-text"><strong>ABC - Quiz</strong><span>${inAppBrowser() ? 'Buka di browser untuk menambahkan' : 'Tambahkan ke Home Screen'}</span></div><button class="button small dark install-cta" data-action="install-cta">${cta}</button>`;
 }
-dialog.addEventListener('close', () => { if (install.open) { install.open = false; snoozeInstall(); } });
-window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); install.deferred = event; setTimeout(maybeOfferInstall, 1500); });
-window.addEventListener('appinstalled', () => { install.deferred = null; snoozeInstall(true); hideInstallButtons(); notice('ABC - Quiz sudah ada di Home Screen.'); });
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); install.deferred = event; updateInstallBanner(); });
+window.addEventListener('appinstalled', () => { install.deferred = null; snoozeInstall(true); hideInstallButtons(); updateInstallBanner(); notice('ABC - Quiz sudah ada di Home Screen.'); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 async function boot() {
   try {
@@ -289,4 +298,4 @@ async function boot() {
     if (state.code && state.profile.name) { const code = state.code; try { await enter(code); } catch (err) { notice(err.message); } }
   } catch (err) { app.innerHTML = `<main class="boot"><h1>ABC — Aku Butuh Code</h1><p>${esc(err.message)}</p><a class="button primary" href="/">Coba lagi</a></main>`; }
 }
-boot().then(() => setTimeout(maybeOfferInstall, 3000));
+boot().then(() => { install.ready = true; updateInstallBanner(); });
