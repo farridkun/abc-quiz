@@ -82,6 +82,10 @@ test('Cloudflare Worker: realtime multiplayer, secrets, idempotency, persistence
     assert.equal((await fetch(base + '/api/me', { headers: { Origin: 'https://evil.example' } })).status, 403);
     const pre = await fetch(base + '/api/me', { method: 'OPTIONS', headers: { Origin: 'https://abc-quiz.farrid.dev', 'Access-Control-Request-Method': 'PATCH' } });
     assert.equal(pre.status, 204); assert.equal(pre.headers.get('access-control-allow-origin'), 'https://abc-quiz.farrid.dev');
+    // Netlify deploy previews match the wildcard entry; look-alike hosts do not.
+    assert.equal((await fetch(base + '/health', { headers: { Origin: 'https://deploy-preview-3--abc-quiz-3346.netlify.app' } })).status, 200);
+    assert.equal((await fetch(base + '/health', { headers: { Origin: 'https://evil.com/--abc-quiz-3346.netlify.app' } })).status, 403);
+    assert.equal((await fetch(base + '/health', { headers: { Origin: 'https://x--abc-quiz-3346.netlify.app.evil.com' } })).status, 403);
 
     const host = await make(); assert.equal(host.profile.name, '');
     await host.call('/rooms', {}, 'POST', 400);

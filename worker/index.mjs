@@ -218,9 +218,11 @@ function allowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
   if (!origin) return { ok: true, origin: null };
   if (origin === new URL(request.url).origin) return { ok: true, origin: null };
+  // Entries may use one leading "*" wildcard, e.g. https://*--site.netlify.app for deploy previews.
   const list = String(env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const matches = entry => entry === origin || (entry.includes('*') && new RegExp('^' + entry.split('*').map(p => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+') + '$').test(origin));
   const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) && env.ALLOW_LOCALHOST === 'true';
-  return { ok: list.includes(origin) || local, origin };
+  return { ok: list.some(matches) || local, origin };
 }
 function cors(headers, origin) {
   if (!origin) return headers;
