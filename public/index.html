@@ -85,6 +85,9 @@
           deferredPrompt = null;
           if (choice.outcome === 'accepted') {
             hideBanner();
+          } else {
+            // Prompt was dismissed — hide banner for this session but allow future visits
+            banner.hidden = true;
           }
         });
       });
