@@ -90,7 +90,7 @@ function cardMarkup(c, i, canGuess) {
   const known = c.type && (c.revealed || isSpy || g.status === 'finished');
   const typeText = c.type === 'neutral' ? 'Netral' : c.type === 'trap' ? 'Jebakan' : c.type ? `Tim ${teamName(c.type)}` : '';
   const draftsOnCard = (g.drafts || []).filter(d => d.cardIndex === i);
-  const draftAvatars = draftsOnCard.map(d => { const m = state.room.members.find(p => p.id === d.playerId); return m ? avatar(m.avatar, 'draft-avatar') : ''; }).join('');
+  const draftAvatars = draftsOnCard.map(d => { const m = state.room.members.find(p => p.id === d.playerId); return m ? avatar(Math.trunc(Number(m.avatar)), 'draft-avatar') : ''; }).join('');
   const isDraftedByMe = draftsOnCard.some(d => d.playerId === state.room.me.id);
   const isBlocked = canGuess && (g.blockedGuessers || []).includes(state.room.me.id);
   return `<button class="word-card ${known ? c.type : ''} ${c.revealed ? 'revealed' : ''} ${state.selected === i || isDraftedByMe ? 'card-selected' : ''} ${isSpy && !c.revealed ? 'secret-card' : ''}" data-action="card" data-index="${i}" ${!canGuess || c.revealed || isBlocked ? 'disabled' : ''} aria-pressed="${state.selected === i || isDraftedByMe}" aria-label="${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}, ${esc(c.word)}${known ? ', ' + typeText : ''}${c.revealed ? ', sudah terbuka' : ''}"><span class="card-coordinate">${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}</span><strong>${esc(c.word)}</strong><span class="card-foot">${known ? `${icon(c.type === 'trap' ? 'x' : c.type === 'neutral' ? 'minus' : c.type === 'coral' ? 'triangle' : 'circle')} ${typeText}` : 'ABC'}${c.revealed ? icon('check') : ''}</span>${draftAvatars ? `<span class="card-draft-avatars">${draftAvatars}</span>` : ''}</button>`;
@@ -414,10 +414,10 @@ window.addEventListener('appinstalled', () => { install.deferred = null; snoozeI
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 // ---- Practice Mode (client-side game vs static bot) ----
-function practiceRandomInt(n) { return Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * n); }
+function practiceRandomInt(n) { const max = 2 ** 32 - (2 ** 32 % n); let x; do { x = crypto.getRandomValues(new Uint32Array(1))[0]; } while (x >= max); return x % n; }
 function practiceShuffle(arr) { const list = [...arr]; for (let i = list.length - 1; i > 0; i--) { const j = practiceRandomInt(i + 1); [list[i], list[j]] = [list[j], list[i]]; } return list; }
 function practiceOther(team) { return team === 'coral' ? 'ocean' : 'coral'; }
-const BOT_CLUE_WORDS = ['Hewan', 'Alam', 'Makanan', 'Tempat', 'Benda', 'Warna', 'Kegiatan', 'Orang', 'Teknologi', 'Pakaian', 'Alam', 'Rumah', 'Kerja', 'Tumbuhan', 'Perjalanan'];
+const BOT_CLUE_WORDS = ['Hewan', 'Alam', 'Makanan', 'Tempat', 'Benda', 'Warna', 'Kegiatan', 'Orang', 'Teknologi', 'Pakaian', 'Perabot', 'Rumah', 'Kerja', 'Tumbuhan', 'Perjalanan'];
 let botTimer = null;
 
 function newPracticeGame(playerTeam) {
