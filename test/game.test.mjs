@@ -141,3 +141,67 @@ test('public visibility needs the feature flag', () => {
   applyCommand(room, 'owner', 'visibility', {}, { publicRooms: true }); assert.equal(room.public, true);
   assert.equal(snapshot(room, 'owner', () => ({ name: 'x' })).public, true);
 });
+
+test('draft toggles per-player card selection and is visible in snapshot', () => {
+  const room = fixture(); const { guesser, team } = turn(room);
+  const idx = room.game.cards.findIndex(c => c.type === team);
+  // Draft a card
+  applyCommand(room, guesser, 'draft', { index: idx });
+  assert.equal(room.game.drafts.length, 1);
+  assert.equal(room.game.drafts[0].playerId, guesser);
+  assert.equal(room.game.drafts[0].cardIndex, idx);
+  // Toggle off (same card)
+  applyCommand(room, guesser, 'draft', { index: idx });
+  assert.equal(room.game.drafts.length, 0);
+  // Multiple drafts per player
+  const idx2 = room.game.cards.findIndex((c, i) => c.type === team && i !== idx);
+  applyCommand(room, guesser, 'draft', { index: idx });
+  applyCommand(room, guesser, 'draft', { index: idx2 });
+  assert.equal(room.game.drafts.length, 2);
+  // Drafts appear in snapshot
+  const snap = snapshot(room, guesser, id => ({ name: id, avatar: 1 }));
+  assert.equal(snap.game.drafts.length, 2);
+});
+
+test('draft blocked for non-active team, spymaster, and revealed cards', () => {
+  const room = fixture(); turn(room);
+  const otherGuesser = room.game.team === 'coral' ? 'c' : 'a'; // wrong team
+  assert.throws(() => applyCommand(room, otherGuesser, 'draft', { index: 0 }), err => err.status === 403);
+  const spy = room.game.team === 'coral' ? 'host' : 'b';
+  assert.throws(() => applyCommand(room, spy, 'draft', { index: 0 }), err => err.status === 403);
+  const revealedIdx = room.game.cards.findIndex(c => !c.revealed); room.game.cards[revealedIdx].revealed = true;
+  const activeGuesser = room.game.team === 'coral' ? 'a' : 'c';
+  assert.throws(() => applyCommand(room, activeGuesser, 'draft', { index: revealedIdx }));
+});
+
+test('guess clears player drafts and blocked guesser cannot draft or guess again this turn', () => {
+  const room = fixture(); const { guesser, team } = turn(room);
+  const neutralIdx = room.game.cards.findIndex(c => c.type === 'neutral');
+  // Draft a card before guessing
+  const ownIdx = room.game.cards.findIndex(c => c.type === team);
+  applyCommand(room, guesser, 'draft', { index: ownIdx });
+  assert.equal(room.game.drafts.length, 1);
+  // Guess the neutral card (wrong) — ends turn
+  applyCommand(room, guesser, 'guess', { index: neutralIdx });
+  // Turn ended so drafts and blockedGuessers were reset by nextTurn
+  assert.equal(room.game.drafts.length, 0);
+  assert.equal(room.game.team, team === 'coral' ? 'ocean' : 'coral');
+});
+
+test('blockedGuessers prevents a guesser from guessing again within same turn state', () => {
+  const room = fixture(); turn(room);
+  // Manually add a player to blockedGuessers to simulate a concurrent duplicate request
+  const guesser = room.game.team === 'coral' ? 'a' : 'c';
+  room.game.blockedGuessers.push(guesser);
+  assert.throws(() => applyCommand(room, guesser, 'guess', { index: 0 }), /salah/);
+  assert.throws(() => applyCommand(room, guesser, 'draft', { index: 0 }), err => err.status === 403);
+});
+
+test('snapshot includes drafts and blockedGuessers', () => {
+  const room = fixture(); turn(room);
+  room.game.drafts = [{ playerId: 'a', cardIndex: 3 }];
+  room.game.blockedGuessers = ['a'];
+  const snap = snapshot(room, 'a', id => ({ name: id, avatar: 1 }));
+  assert.deepEqual(snap.game.drafts, [{ playerId: 'a', cardIndex: 3 }]);
+  assert.deepEqual(snap.game.blockedGuessers, ['a']);
+});

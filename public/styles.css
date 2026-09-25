@@ -14,3 +14,12 @@
 .identity-badge{font-family:var(--heading);background:#e8ecdf;padding:1px 4px;border-radius:4px}
 @media(max-width:650px){.word-card strong{font-size:14px}.word-card{min-height:84px}}
 @media(max-width:370px){dialog .avatar-picker{grid-template-columns:repeat(4,1fr)}}
+
+/* Draft avatars on word cards */
+.card-draft-avatars{position:absolute;bottom:4px;right:4px;display:flex;flex-direction:row-reverse;pointer-events:none}
+.card-draft-avatars .draft-avatar{width:20px;height:20px;border:1.5px solid var(--surface);margin-left:-5px;flex:none}
+.card-draft-avatars .draft-avatar:last-child{margin-left:0}
+
+/* Practice mode landing CTA */
+.practice-cta{margin-top:20px}
+.practice-cta .button{gap:8px}

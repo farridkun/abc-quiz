@@ -294,7 +294,7 @@ async function route(request, env, ip) {
   const url = new URL(request.url), path = url.pathname, method = request.method;
   if (path === '/health') return Response.json({ ok: true });
   limited(`ip:${ip}`, 2000);
-  if (method === 'GET' && path === '/api/config') return Response.json({ publicRooms: publicRoomsEnabled(env) });
+  if (method === 'GET' && path === '/api/config') return Response.json({ publicRooms: publicRoomsEnabled(env), practiceMode: env.FEATURE_PRACTICE_MODE === 'true' });
   if (method === 'GET' && path === '/api/rooms/public') {
     requireThat(publicRoomsEnabled(env), 'Daftar ruang publik sedang nonaktif.', 404, 'feature_disabled');
     limited(`list:${ip}`, 240);
