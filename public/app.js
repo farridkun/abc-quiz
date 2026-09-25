@@ -5,7 +5,8 @@ const app = $('#app'), dialog = $('#dialog');
 const state = { profile: null, room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, token: '', online: true, busy: false, sound: false, signature: '', lastGameId: null, features: { publicRooms: false, practiceMode: false }, publicRooms: null, createPublic: false, celebrated: null, card: null, practice: null };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<img class="icon ${cls}" src="/assets/icon-${name}.svg" alt="" aria-hidden="true" width="20" height="20">`;
-const avatar = (n, cls = '') => `<span class="avatar avatar-${n % 4} ${cls}"><img src="/assets/peep-${n}.svg" alt=""></span>`;
+const PEEP_NUMS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const avatar = (n, cls = '') => { const safe = PEEP_NUMS[Math.trunc(+n) - 1] ?? 1; return `<span class="avatar avatar-${safe % 4} ${cls}"><img src="/assets/peep-${safe}.svg" alt=""></span>`; };
 const teamName = team => team === 'coral' ? 'Coral' : 'Ocean';
 // Room management is limited to the current host and the room's creator (the server enforces this too).
 const canManage = () => !!state.room && [state.room.hostId, state.room.ownerId].includes(state.profile.id);
@@ -90,7 +91,7 @@ function cardMarkup(c, i, canGuess) {
   const known = c.type && (c.revealed || isSpy || g.status === 'finished');
   const typeText = c.type === 'neutral' ? 'Netral' : c.type === 'trap' ? 'Jebakan' : c.type ? `Tim ${teamName(c.type)}` : '';
   const draftsOnCard = (g.drafts || []).filter(d => d.cardIndex === i);
-  const draftAvatars = draftsOnCard.map(d => { const m = state.room.members.find(p => p.id === d.playerId); return m ? avatar(Math.trunc(Number(m.avatar)), 'draft-avatar') : ''; }).join('');
+  const draftAvatars = draftsOnCard.map(d => { const m = state.room.members.find(p => p.id === d.playerId); return m ? avatar(m.avatar, 'draft-avatar') : ''; }).join('');
   const isDraftedByMe = draftsOnCard.some(d => d.playerId === state.room.me.id);
   const isBlocked = canGuess && (g.blockedGuessers || []).includes(state.room.me.id);
   return `<button class="word-card ${known ? c.type : ''} ${c.revealed ? 'revealed' : ''} ${state.selected === i || isDraftedByMe ? 'card-selected' : ''} ${isSpy && !c.revealed ? 'secret-card' : ''}" data-action="card" data-index="${i}" ${!canGuess || c.revealed || isBlocked ? 'disabled' : ''} aria-pressed="${state.selected === i || isDraftedByMe}" aria-label="${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}, ${esc(c.word)}${known ? ', ' + typeText : ''}${c.revealed ? ', sudah terbuka' : ''}"><span class="card-coordinate">${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}</span><strong>${esc(c.word)}</strong><span class="card-foot">${known ? `${icon(c.type === 'trap' ? 'x' : c.type === 'neutral' ? 'minus' : c.type === 'coral' ? 'triangle' : 'circle')} ${typeText}` : 'ABC'}${c.revealed ? icon('check') : ''}</span>${draftAvatars ? `<span class="card-draft-avatars">${draftAvatars}</span>` : ''}</button>`;
