@@ -1,10 +1,12 @@
 import { makePhotocard, confetti } from './photocard.js?v=0.6.0';
+import { WORDS } from './words.js';
 const $ = s => document.querySelector(s);
 const app = $('#app'), dialog = $('#dialog');
-const state = { profile: null, room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, token: '', online: true, busy: false, sound: false, signature: '', lastGameId: null, features: { publicRooms: false }, publicRooms: null, createPublic: false, celebrated: null, card: null };
+const state = { profile: null, room: null, code: location.pathname.match(/^\/r\/([A-Z2-9]{6})$/)?.[1] || '', mode: 'create', avatar: 1, selected: null, token: '', online: true, busy: false, sound: false, signature: '', lastGameId: null, features: { publicRooms: false, practiceMode: false }, publicRooms: null, createPublic: false, celebrated: null, card: null, practice: null };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<img class="icon ${cls}" src="/assets/icon-${name}.svg" alt="" aria-hidden="true" width="20" height="20">`;
-const avatar = (n, cls = '') => `<span class="avatar avatar-${n % 4} ${cls}"><img src="/assets/peep-${n}.svg" alt=""></span>`;
+const PEEP_NUMS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const avatar = (n, cls = '') => { const safe = PEEP_NUMS[Math.trunc(+n) - 1] ?? 1; return `<span class="avatar avatar-${safe % 4} ${cls}"><img src="/assets/peep-${safe}.svg" alt=""></span>`; };
 const teamName = team => team === 'coral' ? 'Coral' : 'Ocean';
 // Room management is limited to the current host and the room's creator (the server enforces this too).
 const canManage = () => !!state.room && [state.room.hostId, state.room.ownerId].includes(state.profile.id);
@@ -50,7 +52,7 @@ function avatarPicker(selected, all = false) {
 }
 function landing() {
   const joining = state.code || state.mode === 'join';
-  return `${header()}<main id="main" class="landing" tabindex="-1"><section class="hero-copy"><div class="eyebrow"><span class="status-dot"></span> YOUR NEXT COFFEE BREAK, UPGRADED</div><h1>Satu kode.<br>Banyak <span class="word-highlight">cerita.<svg viewBox="0 0 400 16" aria-hidden="true"><path d="M3 10 Q190 -3 397 9 M30 15 Q190 4 340 12"/></svg></span></h1><p class="hero-description">Tutup tab kerja sebentar. Buka obrolan baru.<br>Tebak kata, baca pikiran, dan ketawa bareng<br class="desktop-break"> orang-orang favoritmu di kantor.</p><div class="hero-facts"><span>${icon('users')}4–12 pemain</span><span>${icon('clock')}± 15–20 menit</span><span>${icon('coffee')}Tanpa instal</span></div><div class="hero-art" aria-hidden="true"><span class="art-note">beda kepala,<br>satu frekuensi.</span><div class="art-circle"></div><img class="hero-peep peep-left" src="/assets/peep-3.svg" alt=""><img class="hero-peep peep-right" src="/assets/peep-1.svg" alt=""><div class="floating-word word-coral">KOPI <span>01</span></div><div class="floating-word word-lime">IDE <span>02</span></div><span class="art-star">✳</span><span class="art-line"></span></div></section><section class="entry-panel" aria-labelledby="entry-title"><div class="panel-sticker">GOOD TIMES<br>START HERE ${icon('arrow-right')}</div><div class="entry-heading"><span class="overline">${joining ? 'SUDAH DITUNGGU TEMAN?' : 'ADA JEDA? ADA ABC.'}</span><h2 id="entry-title">${joining ? 'Masuk ke circle-mu.' : 'Kumpulkan circle-mu.'}</h2><p>${joining ? 'Isi nama kamu, lalu gabung ke ruang teman.' : 'Satu ruang kecil untuk ide-ide besar.'}</p></div><form id="entry-form" novalidate><label for="player-name">Nama kamu <span>biar teman tahu ini kamu</span></label><input id="player-name" name="name" autocomplete="nickname" placeholder="Contoh: Rani" value="${esc(state.profile?.name || '')}" maxlength="100" aria-describedby="entry-error" required><div class="avatar-label">Pilih versi kamu <span>bebas jadi diri sendiri</span></div>${avatarPicker(state.avatar)}<div class="entry-tabs" role="group" aria-label="Pilih tindakan"><button type="button" data-action="entry-create" class="${!joining ? 'active' : ''}">${icon('plus')}Buat ruang</button><button type="button" data-action="entry-join" class="${joining ? 'active' : ''}">${icon('link')}Gabung ruang</button></div>${joining ? `<label for="room-code">Kode ruang</label><input id="room-code" name="code" class="code-input" placeholder="ABC123" value="${esc(state.code)}" maxlength="6" autocapitalize="characters" autocomplete="off" aria-describedby="entry-error" required>` : `<label for="room-title">Nama ruang <span>opsional</span></label><input id="room-title" name="title" placeholder="Jeda anak lantai 3" maxlength="100">${state.features.publicRooms ? `<label class="check-row"><input type="checkbox" id="room-public" ${state.createPublic ? 'checked' : ''}><span>Tampilkan di daftar ruang publik<small>Siapa pun bisa melihat dan bergabung.</small></span></label>` : ''}`}<p id="entry-error" class="form-error" role="alert"></p><button class="button primary full" type="submit">${joining ? 'Gabung & main bareng' : 'Buat ruang bermain'}${icon('arrow-right')}</button><p class="entry-note">${icon('lock')}Ruang privat. Tanpa akun. Nama pilihanmu tetap.</p></form></section>${state.features.publicRooms ? publicSection() : ''}<section class="how-strip" aria-label="Tiga langkah bermain"><div class="how-intro"><span class="overline">LESS SCROLLING.</span><h3>More connecting.</h3></div><div><span class="step-number">01</span><p><strong>Ajak orang-orangmu</strong><span>Bagikan link, kumpulkan tim.</span></p></div><div><span class="step-number">02</span><p><strong>Satu kata jadi petunjuk</strong><span>Temukan koneksi di balik kata.</span></p></div><div><span class="step-number">03</span><p><strong>Rayakan satu frekuensi</strong><span>Menang atau kalah, main lagi.</span></p></div></section></main>${footer()}`;
+  return `${header()}<main id="main" class="landing" tabindex="-1"><section class="hero-copy"><div class="eyebrow"><span class="status-dot"></span> YOUR NEXT COFFEE BREAK, UPGRADED</div><h1>Satu kode.<br>Banyak <span class="word-highlight">cerita.<svg viewBox="0 0 400 16" aria-hidden="true"><path d="M3 10 Q190 -3 397 9 M30 15 Q190 4 340 12"/></svg></span></h1><p class="hero-description">Tutup tab kerja sebentar. Buka obrolan baru.<br>Tebak kata, baca pikiran, dan ketawa bareng<br class="desktop-break"> orang-orang favoritmu di kantor.</p>  <div class="hero-facts"><span>${icon('users')}4–12 pemain</span><span>${icon('clock')}± 15–20 menit</span><span>${icon('coffee')}Tanpa instal</span></div>${state.features.practiceMode ? `<div class="practice-cta"><button class="button" data-action="practice-open">${icon('bot')}Latihan vs Bot</button></div>` : ''}<div class="hero-art" aria-hidden="true"><span class="art-note">beda kepala,<br>satu frekuensi.</span><div class="art-circle"></div><img class="hero-peep peep-left" src="/assets/peep-3.svg" alt=""><img class="hero-peep peep-right" src="/assets/peep-1.svg" alt=""><div class="floating-word word-coral">KOPI <span>01</span></div><div class="floating-word word-lime">IDE <span>02</span></div><span class="art-star">✳</span><span class="art-line"></span></div></section><section class="entry-panel" aria-labelledby="entry-title"><div class="panel-sticker">GOOD TIMES<br>START HERE ${icon('arrow-right')}</div><div class="entry-heading"><span class="overline">${joining ? 'SUDAH DITUNGGU TEMAN?' : 'ADA JEDA? ADA ABC.'}</span><h2 id="entry-title">${joining ? 'Masuk ke circle-mu.' : 'Kumpulkan circle-mu.'}</h2><p>${joining ? 'Isi nama kamu, lalu gabung ke ruang teman.' : 'Satu ruang kecil untuk ide-ide besar.'}</p></div><form id="entry-form" novalidate><label for="player-name">Nama kamu <span>biar teman tahu ini kamu</span></label><input id="player-name" name="name" autocomplete="nickname" placeholder="Contoh: Rani" value="${esc(state.profile?.name || '')}" maxlength="100" aria-describedby="entry-error" required><div class="avatar-label">Pilih versi kamu <span>bebas jadi diri sendiri</span></div>${avatarPicker(state.avatar)}<div class="entry-tabs" role="group" aria-label="Pilih tindakan"><button type="button" data-action="entry-create" class="${!joining ? 'active' : ''}">${icon('plus')}Buat ruang</button><button type="button" data-action="entry-join" class="${joining ? 'active' : ''}">${icon('link')}Gabung ruang</button></div>${joining ? `<label for="room-code">Kode ruang</label><input id="room-code" name="code" class="code-input" placeholder="ABC123" value="${esc(state.code)}" maxlength="6" autocapitalize="characters" autocomplete="off" aria-describedby="entry-error" required>` : `<label for="room-title">Nama ruang <span>opsional</span></label><input id="room-title" name="title" placeholder="Jeda anak lantai 3" maxlength="100">${state.features.publicRooms ? `<label class="check-row"><input type="checkbox" id="room-public" ${state.createPublic ? 'checked' : ''}><span>Tampilkan di daftar ruang publik<small>Siapa pun bisa melihat dan bergabung.</small></span></label>` : ''}`}<p id="entry-error" class="form-error" role="alert"></p><button class="button primary full" type="submit">${joining ? 'Gabung & main bareng' : 'Buat ruang bermain'}${icon('arrow-right')}</button><p class="entry-note">${icon('lock')}Ruang privat. Tanpa akun. Nama pilihanmu tetap.</p></form></section>${state.features.publicRooms ? publicSection() : ''}<section class="how-strip" aria-label="Tiga langkah bermain"><div class="how-intro"><span class="overline">LESS SCROLLING.</span><h3>More connecting.</h3></div><div><span class="step-number">01</span><p><strong>Ajak orang-orangmu</strong><span>Bagikan link, kumpulkan tim.</span></p></div><div><span class="step-number">02</span><p><strong>Satu kata jadi petunjuk</strong><span>Temukan koneksi di balik kata.</span></p></div><div><span class="step-number">03</span><p><strong>Rayakan satu frekuensi</strong><span>Menang atau kalah, main lagi.</span></p></div></section></main>${footer()}`;
 }
 function publicListMarkup() {
   const rooms = state.publicRooms;
@@ -88,7 +90,11 @@ function cardMarkup(c, i, canGuess) {
   const g = state.room.game, isSpy = state.room.me.role === 'spymaster' && state.room.me.team;
   const known = c.type && (c.revealed || isSpy || g.status === 'finished');
   const typeText = c.type === 'neutral' ? 'Netral' : c.type === 'trap' ? 'Jebakan' : c.type ? `Tim ${teamName(c.type)}` : '';
-  return `<button class="word-card ${known ? c.type : ''} ${c.revealed ? 'revealed' : ''} ${state.selected === i ? 'card-selected' : ''} ${isSpy && !c.revealed ? 'secret-card' : ''}" data-action="card" data-index="${i}" ${!canGuess || c.revealed ? 'disabled' : ''} aria-pressed="${state.selected === i}" aria-label="${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}, ${esc(c.word)}${known ? ', ' + typeText : ''}${c.revealed ? ', sudah terbuka' : ''}"><span class="card-coordinate">${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}</span><strong>${esc(c.word)}</strong><span class="card-foot">${known ? `${icon(c.type === 'trap' ? 'x' : c.type === 'neutral' ? 'minus' : c.type === 'coral' ? 'triangle' : 'circle')} ${typeText}` : 'ABC'}${c.revealed ? icon('check') : ''}</span></button>`;
+  const draftsOnCard = (g.drafts || []).filter(d => d.cardIndex === i);
+  const draftAvatars = draftsOnCard.map(d => { const m = state.room.members.find(p => p.id === d.playerId); return m ? avatar(m.avatar, 'draft-avatar') : ''; }).join('');
+  const isDraftedByMe = draftsOnCard.some(d => d.playerId === state.room.me.id);
+  const isBlocked = canGuess && (g.blockedGuessers || []).includes(state.room.me.id);
+  return `<button class="word-card ${known ? c.type : ''} ${c.revealed ? 'revealed' : ''} ${state.selected === i || isDraftedByMe ? 'card-selected' : ''} ${isSpy && !c.revealed ? 'secret-card' : ''}" data-action="card" data-index="${i}" ${!canGuess || c.revealed || isBlocked ? 'disabled' : ''} aria-pressed="${state.selected === i || isDraftedByMe}" aria-label="${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}, ${esc(c.word)}${known ? ', ' + typeText : ''}${c.revealed ? ', sudah terbuka' : ''}"><span class="card-coordinate">${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}</span><strong>${esc(c.word)}</strong><span class="card-foot">${known ? `${icon(c.type === 'trap' ? 'x' : c.type === 'neutral' ? 'minus' : c.type === 'coral' ? 'triangle' : 'circle')} ${typeText}` : 'ABC'}${c.revealed ? icon('check') : ''}</span>${draftAvatars ? `<span class="card-draft-avatars">${draftAvatars}</span>` : ''}</button>`;
 }
 function gameView() {
   const r = state.room, g = r.game, me = r.me, finished = g.status === 'finished';
@@ -104,7 +110,7 @@ function render() {
   const values = [...app.querySelectorAll('input,select')].filter(x => x.id).map(x => [x.id, x.value]);
   const active = document.activeElement;
   const focus = app.contains(active) ? { id: active.id, action: active.dataset?.action, index: active.dataset?.index, team: active.dataset?.team, role: active.dataset?.role, start: active.selectionStart, end: active.selectionEnd } : null;
-  app.innerHTML = state.room ? state.room.game ? gameView() : lobby() : landing();
+  app.innerHTML = state.practice ? (state.practice.game ? practiceGameView() : practiceLobbyView()) : state.room ? state.room.game ? gameView() : lobby() : landing();
   values.forEach(([id, value]) => { const input = document.getElementById(id); if (input && app.contains(input)) input.value = value; });
   if (focus) {
     let target = focus.id ? document.getElementById(focus.id) : [...app.querySelectorAll('[data-action]')].find(el => el.dataset.action === focus.action && el.dataset.index === focus.index && el.dataset.team === focus.team && el.dataset.role === focus.role);
@@ -289,13 +295,27 @@ document.addEventListener('click', async event => {
   if (action === 'kick') confirmAction('Keluarkan pemain?', 'Pemain ini tidak bisa bergabung kembali menggunakan sesi yang sama.', 'Keluarkan', () => runCommand('kick', { memberId: button.dataset.id }));
   if (action === 'abort') confirmAction('Hentikan pertandingan?', 'Ronde ini akan selesai tanpa pemenang dan semua kartu dibuka. Setelah itu kamu bisa menyiapkan ronde baru.', 'Hentikan', () => runCommand('abort'));
   if (action === 'end-turn') confirmAction('Akhiri giliran timmu?', 'Kesempatan menebak berikutnya beralih ke tim lawan.', 'Akhiri giliran', () => runCommand('end-turn'));
-  if (action === 'card') { state.selected = Number(button.dataset.index); render(); announce(`${state.room.game.cards[state.selected].word} dipilih. Konfirmasi untuk membuka.`); }
+  if (action === 'card') { state.selected = Number(button.dataset.index); render(); announce(`${state.room.game.cards[state.selected].word} dipilih. Konfirmasi untuk membuka.`);
+    // Send draft command for real-time visibility to teammates
+    const g = state.room?.game; const me = state.room?.me;
+    if (g?.status === 'playing' && g.phase === 'guess' && me?.role === 'guesser' && me.team === g.team) {
+      runCommand('draft', { index: state.selected }).catch(() => {});
+    }
+  }
   if (action === 'reveal' && state.selected !== null) { await runCommand('guess', { index: state.selected }); }
   if (action === 'sound') { state.sound = !state.sound; if (state.sound) playTone(); render(); }
+  if (action === 'practice-open') { state.practice = { playerTeam: 'coral', game: null }; render(); }
+  if (action === 'practice-quit') { clearTimeout(botTimer); state.practice = null; state.selected = null; render(); }
+  if (action === 'practice-team') { state.practice.playerTeam = button.dataset.team; render(); }
+  if (action === 'practice-start') { state.practice.game = newPracticeGame(state.practice.playerTeam); state.selected = null; render(); scheduleBotTurn(); }
+  if (action === 'practice-restart') { clearTimeout(botTimer); state.practice.game = newPracticeGame(state.practice.playerTeam); state.selected = null; render(); scheduleBotTurn(); }
+  if (action === 'practice-card') { state.selected = Number(button.dataset.index); render(); }
+  if (action === 'practice-reveal' && state.selected !== null) { const idx = state.selected; state.selected = null; practiceApplyCommand('guess', { index: idx }); }
+  if (action === 'practice-end-turn') { state.selected = null; practiceApplyCommand('end-turn', {}); }
 });
 
 document.addEventListener('submit', async event => {
-  if (!['entry-form', 'profile-form', 'clue-form'].includes(event.target.id)) return;
+  if (!['entry-form', 'profile-form', 'clue-form', 'practice-clue-form'].includes(event.target.id)) return;
   event.preventDefault();
   const form = event.target, submit = form.querySelector('[type="submit"]') || form.querySelector('button');
   if (submit.disabled) return;
@@ -320,6 +340,11 @@ document.addEventListener('submit', async event => {
       if (!state.room && $('#player-name')) $('#player-name').value = state.profile.name;
       notice('Nama kamu sudah disimpan. Tetap kamu, di setiap ronde.');
     } else if (form.id === 'clue-form') await runCommand('clue', { word: $('#clue-word').value, count: Number($('#clue-count').value) });
+    else if (form.id === 'practice-clue-form') {
+      const word = ($('#practice-clue-word')?.value || '').trim();
+      if (!word) throw new Error('Isi petunjuk dulu.');
+      practiceApplyCommand('clue', { word, count: Number($('#practice-clue-count')?.value || 1) });
+    }
   } catch (err) {
     const errorTarget = form.id === 'entry-form' ? $('#entry-error') : $('#profile-error');
     if (errorTarget) errorTarget.textContent = err.message; else notice(err.message);
@@ -388,11 +413,103 @@ function updateInstallBanner() {
 window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); install.deferred = event; updateInstallBanner(); });
 window.addEventListener('appinstalled', () => { install.deferred = null; snoozeInstall(true); hideInstallButtons(); updateInstallBanner(); notice('ABC - Quiz sudah ada di Home Screen.'); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+// ---- Practice Mode (client-side game vs static bot) ----
+function practiceRandomInt(n) { const max = 2 ** 32 - (2 ** 32 % n); let x; do { x = crypto.getRandomValues(new Uint32Array(1))[0]; } while (x >= max); return x % n; }
+function practiceShuffle(arr) { const list = [...arr]; for (let i = list.length - 1; i > 0; i--) { const j = practiceRandomInt(i + 1); [list[i], list[j]] = [list[j], list[i]]; } return list; }
+function practiceOther(team) { return team === 'coral' ? 'ocean' : 'coral'; }
+const BOT_CLUE_WORDS = ['Hewan', 'Alam', 'Makanan', 'Tempat', 'Benda', 'Warna', 'Kegiatan', 'Orang', 'Teknologi', 'Pakaian', 'Perabot', 'Rumah', 'Kerja', 'Tumbuhan', 'Perjalanan'];
+let botTimer = null;
+
+function newPracticeGame(playerTeam) {
+  const first = practiceRandomInt(2) ? 'coral' : 'ocean';
+  const types = practiceShuffle([...Array(9).fill(first), ...Array(8).fill(practiceOther(first)), ...Array(7).fill('neutral'), 'trap']);
+  const cards = practiceShuffle(WORDS).slice(0, 25).map((word, i) => ({ word, type: types[i], revealed: false }));
+  return { status: 'playing', team: first, phase: 'clue', turn: 1, clue: null, guesses: 0, winner: null, reason: null, history: [], drafts: [], blockedGuessers: [], cards };
+}
+function practiceNextTurn(game) { game.team = practiceOther(game.team); game.phase = 'clue'; game.clue = null; game.guesses = 0; game.turn++; game.drafts = []; game.blockedGuessers = []; }
+function practiceApplyCommand(action, data) {
+  const game = state.practice.game;
+  const playerTeam = state.practice.playerTeam;
+  if (action === 'clue') {
+    game.clue = { word: data.word, count: data.count }; game.guesses = 0; game.phase = 'guess';
+    game.drafts = []; game.blockedGuessers = [];
+    game.history.push({ type: 'clue', word: data.word, count: data.count, team: game.team, by: 'player', turn: game.turn, at: Date.now() });
+  } else if (action === 'guess') {
+    const card = game.cards[data.index];
+    const isFirstGuess = !game.history.some(h => h.type === 'guess' && h.by === 'player' && h.turn === game.turn);
+    card.revealed = true; game.guesses++;
+    game.drafts = game.drafts.filter(d => d.playerId !== 'player');
+    if (isFirstGuess && card.type !== game.team) game.blockedGuessers.push('player');
+    game.history.push({ type: 'guess', index: data.index, word: card.word, cardType: card.type, by: 'player', team: game.team, turn: game.turn, at: Date.now() });
+    if (card.type === 'trap') { game.status = 'finished'; game.winner = practiceOther(game.team); game.reason = 'trap'; }
+    else if (['coral', 'ocean'].includes(card.type) && !game.cards.some(c => c.type === card.type && !c.revealed)) { game.status = 'finished'; game.winner = card.type; game.reason = 'complete'; }
+    else if (card.type !== game.team || game.guesses >= game.clue.count + 1) practiceNextTurn(game);
+  } else if (action === 'end-turn') {
+    game.history.push({ type: 'pass', by: 'player', team: game.team, turn: game.turn, at: Date.now() });
+    practiceNextTurn(game);
+  }
+  render(); scheduleBotTurn();
+}
+function scheduleBotTurn() {
+  if (!state.practice?.game || state.practice.game.status !== 'playing') return;
+  const g = state.practice.game; const botTeam = practiceOther(state.practice.playerTeam);
+  if (g.team !== botTeam) return;
+  clearTimeout(botTimer);
+  botTimer = setTimeout(g.phase === 'clue' ? doBotClue : doBotGuess, g.phase === 'clue' ? 1200 : 900);
+}
+function doBotClue() {
+  if (!state.practice?.game || state.practice.game.status !== 'playing') return;
+  const g = state.practice.game; const botTeam = practiceOther(state.practice.playerTeam);
+  if (g.team !== botTeam || g.phase !== 'clue') return;
+  const word = BOT_CLUE_WORDS[practiceRandomInt(BOT_CLUE_WORDS.length)];
+  g.clue = { word, count: 1 }; g.guesses = 0; g.phase = 'guess'; g.drafts = []; g.blockedGuessers = [];
+  g.history.push({ type: 'clue', word, count: 1, team: g.team, by: 'bot', turn: g.turn, at: Date.now() });
+  render(); scheduleBotTurn();
+}
+function doBotGuess() {
+  if (!state.practice?.game || state.practice.game.status !== 'playing') return;
+  const g = state.practice.game; const botTeam = practiceOther(state.practice.playerTeam);
+  if (g.team !== botTeam || g.phase !== 'guess') return;
+  const candidates = g.cards.map((c, i) => ({ c, i })).filter(({ c }) => c.type === botTeam && !c.revealed);
+  if (!candidates.length) { practiceNextTurn(g); render(); return; }
+  const { c: card, i: index } = candidates[practiceRandomInt(candidates.length)];
+  card.revealed = true; g.guesses++;
+  g.history.push({ type: 'guess', index, word: card.word, cardType: card.type, by: 'bot', team: g.team, turn: g.turn, at: Date.now() });
+  if (['coral', 'ocean'].includes(card.type) && !g.cards.some(c => c.type === card.type && !c.revealed)) { g.status = 'finished'; g.winner = card.type; g.reason = 'complete'; }
+  else if (g.guesses >= g.clue.count + 1 || card.type !== botTeam) practiceNextTurn(g);
+  render(); scheduleBotTurn();
+}
+function practiceLobbyView() {
+  const p = state.practice;
+  return `${header()}<main id="main" class="room-main" tabindex="-1"><div class="room-top"><div><div class="eyebrow">LATIHAN · VS BOT</div><h1>${icon('bot')}Mode Latihan</h1></div><div class="room-tools"><button class="button small" data-action="practice-quit">${icon('log-out')}Keluar</button></div></div><div class="lobby-layout"><div class="lobby-left"><div class="section-label"><span>PILIH TIM KAMU</span></div><div class="lobby-teams">${['coral', 'ocean'].map(team => `<section class="team-panel ${team}"><div class="team-heading"><div>${teamSymbol(team)}<h2>Tim ${teamName(team)}</h2></div></div><p class="team-motto">${team === 'coral' ? 'Berani nebak. Berani nyambung.' : 'Tenang di luar. Banyak ide di dalam.'}</p><div class="seat-actions"><button class="button small full ${p.playerTeam === team ? 'selected-seat' : ''}" data-action="practice-team" data-team="${team}">${p.playerTeam === team ? icon('check') + 'Tim pilihanmu' : icon('users') + 'Pilih tim ini'}</button></div></section>`).join('')}</div></div><aside class="lobby-aside"><div class="ready-card"><h3>${icon('bot')}Siap latihan?</h3><p>Kamu bermain sebagai <strong>Pemberi Petunjuk sekaligus Penebak</strong>. Bot mengontrol tim lawan secara otomatis.</p><p style="margin-top:10px;font-size:12px;color:var(--muted)">${icon('eye')}Semua kartu terlihat — ini mode latihan.</p><button class="button dark full" data-action="practice-start" style="margin-top:20px">Mulai Latihan ${icon('arrow-right')}</button></div></aside></div></main>${footer()}`;
+}
+function practiceCardMarkup(c, i) {
+  const g = state.practice.game;
+  const typeText = c.type === 'neutral' ? 'Netral' : c.type === 'trap' ? 'Jebakan' : `Tim ${teamName(c.type)}`;
+  const playerTeam = state.practice.playerTeam;
+  const canGuess = g.status === 'playing' && g.phase === 'guess' && g.team === playerTeam && !g.blockedGuessers.includes('player');
+  return `<button class="word-card ${c.type} ${c.revealed ? 'revealed' : ''} ${state.selected === i ? 'card-selected' : ''} ${!c.revealed ? 'secret-card' : ''}" data-action="practice-card" data-index="${i}" ${!canGuess || c.revealed ? 'disabled' : ''} aria-pressed="${state.selected === i}" aria-label="${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}, ${esc(c.word)}, ${typeText}${c.revealed ? ', sudah terbuka' : ''}"><span class="card-coordinate">${String.fromCharCode(65 + Math.floor(i / 5))}${i % 5 + 1}</span><strong>${esc(c.word)}</strong><span class="card-foot">${icon(c.type === 'trap' ? 'x' : c.type === 'neutral' ? 'minus' : c.type === 'coral' ? 'triangle' : 'circle')} ${typeText}${c.revealed ? icon('check') : ''}</span></button>`;
+}
+function practiceGameView() {
+  const g = state.practice.game; const p = state.practice;
+  const playerTeam = p.playerTeam; const finished = g.status === 'finished';
+  const isMyTurn = !finished && g.team === playerTeam;
+  const isBlocked = g.blockedGuessers.includes('player');
+  const canGuess = isMyTurn && g.phase === 'guess' && !isBlocked;
+  const canClue = isMyTurn && g.phase === 'clue';
+  const selected = state.selected !== null ? g.cards[state.selected] : null;
+  const remaining = { coral: g.cards.filter(c => c.type === 'coral' && !c.revealed).length, ocean: g.cards.filter(c => c.type === 'ocean' && !c.revealed).length };
+  const statusMsg = finished ? (g.winner ? `Tim ${teamName(g.winner)} menang!` : 'Latihan selesai.') : isMyTurn && g.phase === 'clue' ? 'Giliranmu memberi petunjuk.' : isMyTurn && g.phase === 'guess' ? 'Giliranmu menebak.' : 'Bot sedang berpikir…';
+  return `${header()}<main id="main" class="room-main game-main" tabindex="-1"><div class="room-top"><div><div class="eyebrow">LATIHAN · ${finished ? 'SELESAI' : `GILIRAN TIM ${teamName(g.team).toUpperCase()} · ${g.turn}`}</div><h1>${icon('bot')}Latihan vs Bot</h1></div><div class="room-tools"><button class="button small" data-action="practice-quit">${icon('log-out')}Keluar</button></div></div><div class="secret-warning">${icon('eye')}Peta rahasia · Mode latihan — kamu bisa melihat semua kartu.</div><div class="game-layout"><aside class="game-sidebar"><section class="team-panel coral"><div class="team-heading"><div>${teamSymbol('coral')}<h2>Tim Coral</h2></div><span class="score">${remaining.coral}<small> tersisa</small></span></div><p class="team-motto">${playerTeam === 'coral' ? '← Timmu' : '← Bot'}</p></section><section class="team-panel ocean"><div class="team-heading"><div>${teamSymbol('ocean')}<h2>Tim Ocean</h2></div><span class="score">${remaining.ocean}<small> tersisa</small></span></div><p class="team-motto">${playerTeam === 'ocean' ? '← Timmu' : '← Bot'}</p></section><div class="role-card"><span class="overline">PERANMU</span><strong>${icon('eye')}Pemberi Petunjuk + Penebak</strong><p>Kamu melihat semua kartu dalam mode latihan.</p></div></aside><section class="play-surface" aria-label="Papan permainan"><div class="turn-banner ${finished ? 'finished-banner' : g.team}"><div class="turn-symbol">${icon(finished ? 'trophy' : isMyTurn ? 'sparkles' : 'bot')}</div><div><span class="overline">${finished ? 'LATIHAN SELESAI' : `GILIRAN TIM ${teamName(g.team).toUpperCase()} · ${g.turn}`}</span><h2>${esc(statusMsg)}</h2>${finished ? `<p>${g.reason === 'trap' ? 'Jebakan terbuka!' : g.reason === 'complete' ? 'Semua kata tim berhasil ditemukan.' : 'Latihan dihentikan.'}</p>` : ''}</div></div>${!finished ? `<div class="clue-area">${canClue ? `<form id="practice-clue-form" class="clue-form"><div><label for="practice-clue-word">Petunjuk satu kata</label><input id="practice-clue-word" placeholder="Contoh: Sarapan" autocomplete="off" maxlength="32" required></div><div class="clue-number"><label for="practice-clue-count">Jumlah</label><select id="practice-clue-count">${Array.from({ length: 9 }, (_, j) => `<option>${j + 1}</option>`).join('')}</select></div><button class="button dark">Kirim ${icon('arrow-right')}</button></form>` : g.clue ? `<div class="active-clue"><span>PETUNJUK</span><strong>${esc(g.clue.word)}</strong><b>${g.clue.count}</b><span class="guess-count">${g.guesses}/${g.clue.count + 1} tebakan</span></div>` : `<div class="clue-waiting">${icon('bot')}Bot sedang memikirkan petunjuk…</div>`}</div>` : ''}<div class="board-scroll"><div class="word-grid">${g.cards.map((c, j) => practiceCardMarkup(c, j)).join('')}</div></div><div class="board-actions">${finished ? `<div><strong>${g.winner === playerTeam ? 'Timmu menang!' : g.winner ? 'Bot menang.' : 'Latihan selesai.'}</strong><span>Coba lagi untuk mengasah petunjukmu.</span></div><div class="board-action-buttons"><button class="button primary" data-action="practice-restart">${icon('rotate-ccw')}Mulai lagi</button><button class="button" data-action="practice-quit">${icon('log-out')}Keluar</button></div>` : `<div class="selection-status">${selected && canGuess ? `<strong>${esc(selected.word)}</strong><span>Yakin ini kata yang dimaksud?</span>` : `<span>${isBlocked ? 'Tebakan pertamamu salah; giliran berakhir.' : canGuess ? 'Pilih kartu, lalu konfirmasi.' : 'Tunggu giliranmu.'}</span>`}</div><div class="board-action-buttons">${canGuess ? `<button class="button small" data-action="practice-end-turn" ${g.guesses < 1 ? 'disabled' : ''}>Akhiri giliran</button><button class="button dark" data-action="practice-reveal" ${!selected ? 'disabled' : ''}>${selected ? 'Buka ' + esc(selected.word) : 'Pilih kartu'}${icon('arrow-right')}</button>` : ''}</div>`}</div><div class="board-legend"><span>${teamSymbol('coral')}Coral</span><span>${teamSymbol('ocean')}Ocean</span><span>${icon('minus')}Netral</span><span>${icon('x')}Jebakan = kalah</span></div></section><aside class="history-sidebar"><h2>${icon('clock')}Jejak petunjuk</h2><p class="muted">Setiap kata punya cerita.</p><div class="history-list">${g.history.length ? [...g.history].reverse().map(e => `<div class="history-item"><span class="history-team ${e.team}">${teamSymbol(e.team)}</span><div>${e.type === 'clue' ? `<strong>${esc(e.word)} <b>${e.count}</b></strong><span>${e.by === 'bot' ? 'Bot' : 'Kamu'} memberi petunjuk</span>` : e.type === 'guess' ? `<strong>${esc(e.word)}</strong><span>${e.cardType === 'trap' ? 'Jebakan terbuka' : e.cardType === 'neutral' ? 'Kartu netral' : 'Kartu ' + teamName(e.cardType)} · ${e.by === 'bot' ? 'Bot' : 'Kamu'}</span>` : '<strong>Giliran diakhiri</strong>'}</div></div>`).join('') : `<div class="history-empty">${icon('sparkles')}Cerita pertama dimulai dari satu kata.</div>`}</div></aside></div></main>${footer()}`;
+}
+
 async function boot() {
   try {
     const [result, config] = await Promise.all([api('/me'), api('/config').catch(() => ({}))]);
     state.profile = result.profile; state.avatar = result.profile.avatar;
     state.features.publicRooms = config.publicRooms === true;
+    state.features.practiceMode = config.practiceMode === true;
     loadPublicRooms();
     render();
     if (state.code && state.profile.name) { const code = state.code; try { await enter(code); } catch (err) { notice(err.message); } }
